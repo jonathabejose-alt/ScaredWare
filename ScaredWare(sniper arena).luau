@@ -48,6 +48,8 @@ local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local UserSettings = UserSettings or game:GetService("UserSettings")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -153,6 +155,10 @@ local Config = {
         Chams = true,
         MaxDistance = 1200,
     },
+    Movement = {
+        JumpEnabled = false,
+        JumpValue = 90,
+    },
 }
 
 local function normalizeAutoShootButton(value)
@@ -239,7 +245,7 @@ end
 
 local function configSnapshot()
     return {
-        Version = 8,
+        Version = 9,
         AimMode = Config.AimMode,
         Aim = {
             Enabled = Config.Aim.Enabled, HoldRMB = Config.Aim.HoldRMB,
@@ -274,6 +280,10 @@ local function configSnapshot()
             Health = Config.ESP.Health, Distance = Config.ESP.Distance, Chams = Config.ESP.Chams,
             MaxDistance = Config.ESP.MaxDistance,
         },
+        Movement = {
+            JumpEnabled = Config.Movement.JumpEnabled,
+            JumpValue = Config.Movement.JumpValue,
+        },
         Theme = VindUI._ThemeName,
     }
 end
@@ -289,6 +299,7 @@ local function applyConfigTable(data)
     local aim = type(data.Aim) == "table" and data.Aim or {}
     local tb = type(data.TriggerBot) == "table" and data.TriggerBot or {}
     local esp = type(data.ESP) == "table" and data.ESP or {}
+    local mv = type(data.Movement) == "table" and data.Movement or {}
     local aimKeys = {
         "Enabled", "HoldRMB", "VisibleCheck", "RespectGameVisibility", "RespectSmoke", "RespectFlash",
         "HeadPriority", "AimPoint", "AutoShoot", "AutoShootButton", "AutoShootRadius", "AutoShootDelay",
@@ -318,6 +329,8 @@ local function applyConfigTable(data)
     for _, key in ipairs(espKeys) do
         if esp[key] ~= nil then Config.ESP[key] = esp[key] end
     end
+    if mv.JumpEnabled ~= nil then Config.Movement.JumpEnabled = mv.JumpEnabled end
+    if mv.JumpValue ~= nil then Config.Movement.JumpValue = mv.JumpValue end
     if type(data.Theme) == "string" and data.Theme ~= "" then
         pcall(function() VindUI:SetTheme(data.Theme) end)
     end
@@ -424,11 +437,21 @@ if ConfigStore.Available then
     end
 end
 
-local EntityService, WorldManager, CameraController, GameService, WatchingHelper, EntityController, Effects, WeaponController, LocalEntity
-local moduleInitState = "Starting..."
-local backendName = "Fallback"
-local setStatus = function(_) end
-local requireErrors = {}
+getgenv().EntityService = nil
+getgenv().WorldManager = nil
+getgenv().CameraController = nil
+getgenv().GameService = nil
+getgenv().WatchingHelper = nil
+getgenv().EntityController = nil
+getgenv().Effects = nil
+getgenv().WeaponController = nil
+getgenv().LocalEntity = nil
+
+getgenv().moduleInitState = "Starting..."
+getgenv().backendName = "Fallback"
+getgenv().requireErrors = {}
+
+getgenv().setStatus = function(_) end
 
 local function isForcedIdlePlace()
     local info = getCurrentPlaceInfo()
@@ -439,10 +462,10 @@ local function combatRuntimeActive()
     if tonumber(game.GameId) ~= SNIPER_ARENA_UNIVERSE_ID then return false end
     if isForcedIdlePlace() then return false end
     if LocalPlayer:GetAttribute("Team") == "Lobby" then return false end
-    if GameService then
-        local okJoined, joined = pcall(function() if GameService.IsJoined then return GameService.IsJoined() end end)
+    if getgenv().GameService then
+        local okJoined, joined = pcall(function() if getgenv().GameService.IsJoined then return getgenv().GameService.IsJoined() end end)
         if okJoined and joined == false then return false end
-        local okPaused, paused = pcall(function() if GameService.IsPaused then return GameService.IsPaused() end end)
+        local okPaused, paused = pcall(function() if getgenv().GameService.IsPaused then return getgenv().GameService.IsPaused() end end)
         if okPaused and paused == true then return false end
     end
     return true
@@ -458,7 +481,7 @@ local function safeRequire(instance)
     if not instance or not instance:IsA("ModuleScript") then return nil end
     local ok, result = pcall(require, instance)
     if ok and result ~= nil then return result end
-    if instance then requireErrors[instance:GetFullName()] = tostring(result) end
+    if instance then getgenv().requireErrors[instance:GetFullName()] = tostring(result) end
     return nil
 end
 
@@ -471,14 +494,14 @@ local function getExactModule(folderName, moduleName)
 end
 
 local function refreshLocalEntity()
-    if not EntityService then LocalEntity = nil return nil end
+    if not getgenv().EntityService then getgenv().LocalEntity = nil return nil end
     local current
     pcall(function()
-        current = EntityService.LocalEntity
-        if not current and EntityService.GetLocalEntity then current = EntityService.GetLocalEntity() end
+        current = getgenv().EntityService.LocalEntity
+        if not current and getgenv().EntityService.GetLocalEntity then current = getgenv().EntityService.GetLocalEntity() end
     end)
-    if current then LocalEntity = current end
-    return LocalEntity
+    if current then getgenv().LocalEntity = current end
+    return getgenv().LocalEntity
 end
 
 local function tableHasFunction(t, key)
@@ -495,24 +518,24 @@ end
 
 local function classifyModuleTable(t)
     if type(t) ~= "table" then return end
-    if not EntityService and tableHasFunction(t, "FetchEntity") and tableHasFunction(t, "GetOrCreateEntity") and tableHasFunction(t, "GetEntity") and tableHasValue(t, "WorldManager") then EntityService = t end
-    if not GameService and tableHasFunction(t, "IsJoined") and tableHasFunction(t, "GetTeam") and tableHasValue(t, "RoomManager") and tableHasValue(t, "LocalGameClient") then GameService = t end
-    if not CameraController and tableHasFunction(t, "GetCamera") and tableHasFunction(t, "GetTargetingFn") and (tableHasFunction(t, "UpdateTarging") or tableHasFunction(t, "GetTargetingEntity")) then CameraController = t end
-    if not EntityController and tableHasFunction(t, "GetController") and tableHasValue(t, "ControllerChanged") then EntityController = t end
-    if not Effects and tableHasValue(t, "Smoke") and tableHasValue(t, "Flash") and (tableHasValue(t, "Bullet") or tableHasValue(t, "Projectile")) then Effects = t end
-    if not WatchingHelper and tableHasValue(t, "Watching") and tableHasValue(t, "WatchingEntity") and tableHasFunction(t, "FilterEntity") then WatchingHelper = t end
-    if not WeaponController and tableHasFunction(t, "GetWeapon") and tableHasFunction(t, "GetWeapons") and tableHasValue(t, "Components") and tableHasValue(t, "ClientWeapon") and tableHasValue(t, "API") then WeaponController = t end
+    if not getgenv().EntityService and tableHasFunction(t, "FetchEntity") and tableHasFunction(t, "GetOrCreateEntity") and tableHasFunction(t, "GetEntity") and tableHasValue(t, "WorldManager") then getgenv().EntityService = t end
+    if not getgenv().GameService and tableHasFunction(t, "IsJoined") and tableHasFunction(t, "GetTeam") and tableHasValue(t, "RoomManager") and tableHasValue(t, "LocalGameClient") then getgenv().GameService = t end
+    if not getgenv().CameraController and tableHasFunction(t, "GetCamera") and tableHasFunction(t, "GetTargetingFn") and (tableHasFunction(t, "UpdateTarging") or tableHasFunction(t, "GetTargetingEntity")) then getgenv().CameraController = t end
+    if not getgenv().EntityController and tableHasFunction(t, "GetController") and tableHasValue(t, "ControllerChanged") then getgenv().EntityController = t end
+    if not getgenv().Effects and tableHasValue(t, "Smoke") and tableHasValue(t, "Flash") and (tableHasValue(t, "Bullet") or tableHasValue(t, "Projectile")) then getgenv().Effects = t end
+    if not getgenv().WatchingHelper and tableHasValue(t, "Watching") and tableHasValue(t, "WatchingEntity") and tableHasFunction(t, "FilterEntity") then getgenv().WatchingHelper = t end
+    if not getgenv().WeaponController and tableHasFunction(t, "GetWeapon") and tableHasFunction(t, "GetWeapons") and tableHasValue(t, "Components") and tableHasValue(t, "ClientWeapon") and tableHasValue(t, "API") then getgenv().WeaponController = t end
 end
 
 local function tryExactRequires()
-    EntityService = EntityService or safeRequire(getExactModule("Remote", "EntityService"))
-    GameService = GameService or safeRequire(getExactModule("Remote", "GameService"))
-    CameraController = CameraController or safeRequire(getExactModule("Client", "CameraController"))
-    EntityController = EntityController or safeRequire(getExactModule("Client", "EntityController"))
-    Effects = Effects or safeRequire(getExactModule("Client", "Effects"))
-    WatchingHelper = WatchingHelper or safeRequire(getExactModule("Client", "WatchingHelper"))
-    WeaponController = WeaponController or safeRequire(getExactModule("Client", "WeaponController"))
-    if EntityService then pcall(function() WorldManager = WorldManager or EntityService.WorldManager end) end
+    getgenv().EntityService = getgenv().EntityService or safeRequire(getExactModule("Remote", "EntityService"))
+    getgenv().GameService = getgenv().GameService or safeRequire(getExactModule("Remote", "GameService"))
+    getgenv().CameraController = getgenv().CameraController or safeRequire(getExactModule("Client", "CameraController"))
+    getgenv().EntityController = getgenv().EntityController or safeRequire(getExactModule("Client", "EntityController"))
+    getgenv().Effects = getgenv().Effects or safeRequire(getExactModule("Client", "Effects"))
+    getgenv().WatchingHelper = getgenv().WatchingHelper or safeRequire(getExactModule("Client", "WatchingHelper"))
+    getgenv().WeaponController = getgenv().WeaponController or safeRequire(getExactModule("Client", "WeaponController"))
+    if getgenv().EntityService then pcall(function() getgenv().WorldManager = getgenv().WorldManager or getgenv().EntityService.WorldManager end) end
 end
 
 local function tryLoadedModules()
@@ -522,16 +545,16 @@ local function tryLoadedModules()
     for _, module in ipairs(modules) do
         if typeof(module) == "Instance" and module:IsA("ModuleScript") then
             local fullName = module:GetFullName()
-            if not EntityService and fullName == "ReplicatedStorage.Remote.EntityService" then EntityService = safeRequire(module)
-            elseif not GameService and fullName == "ReplicatedStorage.Remote.GameService" then GameService = safeRequire(module)
-            elseif not CameraController and fullName == "ReplicatedStorage.Client.CameraController" then CameraController = safeRequire(module)
-            elseif not EntityController and fullName == "ReplicatedStorage.Client.EntityController" then EntityController = safeRequire(module)
-            elseif not Effects and fullName == "ReplicatedStorage.Client.Effects" then Effects = safeRequire(module)
-            elseif not WatchingHelper and fullName == "ReplicatedStorage.Client.WatchingHelper" then WatchingHelper = safeRequire(module)
-            elseif not WeaponController and fullName == "ReplicatedStorage.Client.WeaponController" then WeaponController = safeRequire(module) end
+            if not getgenv().EntityService and fullName == "ReplicatedStorage.Remote.EntityService" then getgenv().EntityService = safeRequire(module)
+            elseif not getgenv().GameService and fullName == "ReplicatedStorage.Remote.GameService" then getgenv().GameService = safeRequire(module)
+            elseif not getgenv().CameraController and fullName == "ReplicatedStorage.Client.CameraController" then getgenv().CameraController = safeRequire(module)
+            elseif not getgenv().EntityController and fullName == "ReplicatedStorage.Client.EntityController" then getgenv().EntityController = safeRequire(module)
+            elseif not getgenv().Effects and fullName == "ReplicatedStorage.Client.Effects" then getgenv().Effects = safeRequire(module)
+            elseif not getgenv().WatchingHelper and fullName == "ReplicatedStorage.Client.WatchingHelper" then getgenv().WatchingHelper = safeRequire(module)
+            elseif not getgenv().WeaponController and fullName == "ReplicatedStorage.Client.WeaponController" then getgenv().WeaponController = safeRequire(module) end
         end
     end
-    if EntityService then pcall(function() WorldManager = WorldManager or EntityService.WorldManager end) end
+    if getgenv().EntityService then pcall(function() getgenv().WorldManager = getgenv().WorldManager or getgenv().EntityService.WorldManager end) end
 end
 
 local function tryGarbageCollector()
@@ -540,59 +563,59 @@ local function tryGarbageCollector()
     if not ok or type(objects) ~= "table" then return end
     for _, object in ipairs(objects) do
         if type(object) == "table" then pcall(classifyModuleTable, object) end
-        if EntityService and GameService and CameraController and EntityController and Effects and WatchingHelper and WeaponController then break end
+        if getgenv().EntityService and getgenv().GameService and getgenv().CameraController and getgenv().EntityController and getgenv().Effects and getgenv().WatchingHelper and getgenv().WeaponController then break end
     end
-    if EntityService then pcall(function() WorldManager = WorldManager or EntityService.WorldManager end) end
+    if getgenv().EntityService then pcall(function() getgenv().WorldManager = getgenv().WorldManager or getgenv().EntityService.WorldManager end) end
 end
 
 local function updateBackendStatus()
     refreshLocalEntity()
     local loaded = {}
-    if EntityService then table.insert(loaded, "Entity") end
-    if GameService then table.insert(loaded, "Room") end
-    if CameraController then table.insert(loaded, "Camera") end
-    if EntityController then table.insert(loaded, "Visibility") end
-    if Effects then table.insert(loaded, "Effects") end
-    if WeaponController then table.insert(loaded, "Weapon") end
-    if EntityService and WorldManager and CameraController and WeaponController then
-        backendName = "Native"
-        moduleInitState = "READY • native " .. table.concat(loaded, "/")
+    if getgenv().EntityService then table.insert(loaded, "Entity") end
+    if getgenv().GameService then table.insert(loaded, "Room") end
+    if getgenv().CameraController then table.insert(loaded, "Camera") end
+    if getgenv().EntityController then table.insert(loaded, "Visibility") end
+    if getgenv().Effects then table.insert(loaded, "Effects") end
+    if getgenv().WeaponController then table.insert(loaded, "Weapon") end
+    if getgenv().EntityService and getgenv().WorldManager and getgenv().CameraController and getgenv().WeaponController then
+        getgenv().backendName = "Native"
+        getgenv().moduleInitState = "READY • native " .. table.concat(loaded, "/")
     elseif #loaded > 0 then
-        backendName = "Hybrid"
-        moduleInitState = "READY • hybrid " .. table.concat(loaded, "/") .. " + fallback"
+        getgenv().backendName = "Hybrid"
+        getgenv().moduleInitState = "READY • hybrid " .. table.concat(loaded, "/") .. " + fallback"
     else
-        backendName = "Fallback"
-        moduleInitState = "READY • replicated fallback active"
+        getgenv().backendName = "Fallback"
+        getgenv().moduleInitState = "READY • replicated fallback active"
     end
-    setStatus(moduleInitState)
+    getgenv().setStatus(getgenv().moduleInitState)
 end
 
 local function initializeGameModules()
-    moduleInitState = "Finding game backend..."
-    setStatus(moduleInitState)
+    getgenv().moduleInitState = "Finding game backend..."
+    getgenv().setStatus(getgenv().moduleInitState)
     tryExactRequires()
-    if not (EntityService and GameService and CameraController and WeaponController) then tryLoadedModules() end
-    if not (EntityService and GameService and CameraController and WeaponController) then tryGarbageCollector() end
+    if not (getgenv().EntityService and getgenv().GameService and getgenv().CameraController and getgenv().WeaponController) then tryLoadedModules() end
+    if not (getgenv().EntityService and getgenv().GameService and getgenv().CameraController and getgenv().WeaponController) then tryGarbageCollector() end
     updateBackendStatus()
 end
 
-local destroyed = false
-local lockedTarget = nil
-local lockedTargetLastInfo = nil
-local lockedTargetLastValidAt = 0
-local lastTargetChangeAt = 0
-local lastAutoShotAt = 0
-local lastAutoShotAttemptAt = 0
-local lastAutoShootTarget = nil
-local autoShootPressPending = false
-local lastTriggerShotAt = 0
-local targetVelocityHistory = setmetatable({}, {__mode = "k"})
-local espObjects = {}
-local connections = {}
-local renderName = "__SW_SniperArena_AimESP_" .. tostring(math.random(100000, 999999))
+getgenv().destroyed = false
+getgenv().lockedTarget = nil
+getgenv().lockedTargetLastInfo = nil
+getgenv().lockedTargetLastValidAt = 0
+getgenv().lastTargetChangeAt = 0
+getgenv().lastAutoShotAt = 0
+getgenv().lastAutoShotAttemptAt = 0
+getgenv().lastAutoShootTarget = nil
+getgenv().autoShootPressPending = false
+getgenv().lastTriggerShotAt = 0
+getgenv().targetVelocityHistory = setmetatable({}, {__mode = "k"})
+getgenv().espObjects = {}
+getgenv().connections = {}
+getgenv().renderName = "__SW_SniperArena_AimESP_" .. tostring(math.random(100000, 999999))
 
-local FOVColorState = { mode = "Custom", custom = Color3.fromRGB(255, 255, 255) }
-local ESPColorState = { mode = "Custom", custom = Color3.fromRGB(255, 78, 78) }
+getgenv().FOVColorState = { mode = "Custom", custom = Color3.fromRGB(255, 255, 255) }
+getgenv().ESPColorState = { mode = "Custom", custom = Color3.fromRGB(255, 78, 78) }
 
 local function getRainbowColor(speed, offset)
     local t = (tick() * (speed or 1) + (offset or 0)) % 1
@@ -600,13 +623,13 @@ local function getRainbowColor(speed, offset)
 end
 
 local function getCurrentFOVColor()
-    if FOVColorState.mode == "Rainbow" then return getRainbowColor(0.5, 0) end
-    return FOVColorState.custom
+    if getgenv().FOVColorState.mode == "Rainbow" then return getRainbowColor(0.5, 0) end
+    return getgenv().FOVColorState.custom
 end
 
 local function getCurrentESPColor()
-    if ESPColorState.mode == "Rainbow" then return getRainbowColor(0.5, 0) end
-    return ESPColorState.custom
+    if getgenv().ESPColorState.mode == "Rainbow" then return getRainbowColor(0.5, 0) end
+    return getgenv().ESPColorState.custom
 end
 
 local mouseAimSupported = type(mousemoverel) == "function"
@@ -656,7 +679,7 @@ local function moveAimWithMouse(cam, targetPosition, dt, responseSpeed, snap)
 end
 
 local function addConnection(connection)
-    table.insert(connections, connection)
+    table.insert(getgenv().connections, connection)
     return connection
 end
 
@@ -830,11 +853,11 @@ local function getTargetVelocity(entity, aimPart)
     if typeof(rawVelocity) ~= "Vector3" then rawVelocity = Vector3.zero end
     if rawVelocity.Magnitude > 250 then rawVelocity = rawVelocity.Unit * 250 end
     local smoothing = math.clamp(tonumber(Config.Aim.PredictionSmoothing) or 0.72, 0, 0.98)
-    local previous = targetVelocityHistory[entity]
+    local previous = getgenv().targetVelocityHistory[entity]
     local filtered
     if typeof(previous) == "Vector3" then filtered = previous:Lerp(rawVelocity, 1 - smoothing)
     else filtered = rawVelocity end
-    targetVelocityHistory[entity] = filtered
+    getgenv().targetVelocityHistory[entity] = filtered
     return filtered
 end
 
@@ -924,9 +947,9 @@ local function isEnemy(entity)
     if not entity or not isAlive(entity) then return false end
     local rawInstance = getRawInstance(entity)
     local player = getPlayerFromEntityLike(entity)
-    if rawInstance == LocalPlayer or rawInstance == LocalPlayer.Character or player == LocalPlayer or entity == LocalEntity then return false end
-    if LocalEntity and typeof(entity) ~= "Instance" then
-        local friendly = safeCall(function() return LocalEntity:IsFriendly(entity) end)
+    if rawInstance == LocalPlayer or rawInstance == LocalPlayer.Character or player == LocalPlayer or entity == getgenv().LocalEntity then return false end
+    if getgenv().LocalEntity and typeof(entity) ~= "Instance" then
+        local friendly = safeCall(function() return getgenv().LocalEntity:IsFriendly(entity) end)
         if friendly == true then return false
         elseif friendly == false then return true end
     end
@@ -942,8 +965,8 @@ local function isEnemy(entity)
 end
 
 local function gameSaysVisible(entity)
-    if not Config.Aim.RespectGameVisibility or not EntityController then return true end
-    local controller = safeCall(function() return EntityController.GetController(entity) end)
+    if not Config.Aim.RespectGameVisibility or not getgenv().EntityController then return true end
+    local controller = safeCall(function() return getgenv().EntityController.GetController(entity) end)
     if not controller or not controller.VisibleController then return true end
     local visibleController = controller.VisibleController
     if visibleController.CurrentVisible == false then return false end
@@ -952,15 +975,15 @@ local function gameSaysVisible(entity)
 end
 
 local function blockedByEffects(position)
-    if not Effects then return false end
+    if not getgenv().Effects then return false end
     if Config.Aim.RespectFlash then
-        local flashAlpha = safeCall(function() return Effects.Flash.GetFlashingAlpha() end)
+        local flashAlpha = safeCall(function() return getgenv().Effects.Flash.GetFlashingAlpha() end)
         if type(flashAlpha) == "number" and flashAlpha > 0.5 then return true end
     end
     if Config.Aim.RespectSmoke then
-        local inSmoke = safeCall(function() return Effects.Smoke.InSmoke() end)
+        local inSmoke = safeCall(function() return getgenv().Effects.Smoke.InSmoke() end)
         if inSmoke then return true end
-        local posInSmoke = safeCall(function() return Effects.Smoke.PosInSmoke(position) end)
+        local posInSmoke = safeCall(function() return getgenv().Effects.Smoke.PosInSmoke(position) end)
         if posInSmoke then return true end
     end
     return false
@@ -1005,17 +1028,17 @@ local function hasLineOfSight(entity, position)
 end
 
 local function getFocusedEntities()
-    if not WorldManager then return {} end
-    local result = safeCall(function() return WorldManager.GetFocusedEntities() end)
+    if not getgenv().WorldManager then return {} end
+    local result = safeCall(function() return getgenv().WorldManager.GetFocusedEntities() end)
     if type(result) == "table" then return result end
-    local world = safeCall(function() return WorldManager.GetFocusedWorld() end)
+    local world = safeCall(function() return getgenv().WorldManager.GetFocusedWorld() end)
     if world and type(world.Entities) == "table" then return world.Entities end
     return {}
 end
 
 local function convertInstanceToNativeEntity(instance)
-    if not EntityService or typeof(instance) ~= "Instance" then return nil end
-    return safeCall(function() if EntityService.GetEntity then return EntityService.GetEntity(instance) end end)
+    if not getgenv().EntityService or typeof(instance) ~= "Instance" then return nil end
+    return safeCall(function() if getgenv().EntityService.GetEntity then return getgenv().EntityService.GetEntity(instance) end end)
 end
 
 local function iterateReplicatedFallback(callback, alreadySeen)
@@ -1046,8 +1069,8 @@ end
 local function iterateEnemies(callback)
     local seen = {}
     local usedNative = false
-    if GameService and GameService.RoomManager then
-        local room = safeCall(function() return GameService.RoomManager.GetFocusedRoom() end)
+    if getgenv().GameService and getgenv().GameService.RoomManager then
+        local room = safeCall(function() return getgenv().GameService.RoomManager.GetFocusedRoom() end)
         local modeHandler = room and room.ModeHandler
         if room and modeHandler and room.ClientsByTeam and modeHandler.GetEnemyTeams then
             local enemyTeams = safeCall(function() return modeHandler:GetEnemyTeams() end)
@@ -1145,39 +1168,39 @@ local function targetInfo(entity, fovMultiplier)
 end
 
 local function keepLockedTargetThroughGrace()
-    if not lockedTarget or not lockedTargetLastInfo then return nil end
+    if not getgenv().lockedTarget or not getgenv().lockedTargetLastInfo then return nil end
     local grace = math.max(tonumber(Config.Aim.LockGrace) or 0, 0)
-    if grace <= 0 or (os.clock() - lockedTargetLastValidAt) > grace then return nil end
-    if not isEnemy(lockedTarget) then return nil end
-    local rawPosition, part = getAimPosition(lockedTarget)
+    if grace <= 0 or (os.clock() - getgenv().lockedTargetLastValidAt) > grace then return nil end
+    if not isEnemy(getgenv().lockedTarget) then return nil end
+    local rawPosition, part = getAimPosition(getgenv().lockedTarget)
     if rawPosition then
-        local info = lockedTargetLastInfo
+        local info = getgenv().lockedTargetLastInfo
         info.RawPosition = rawPosition
         info.Part = part
-        info.Position = getPredictedAimPosition(lockedTarget, rawPosition, part)
-        info.Velocity = getTargetVelocity(lockedTarget, part)
+        info.Position = getPredictedAimPosition(getgenv().lockedTarget, rawPosition, part)
+        info.Velocity = getTargetVelocity(getgenv().lockedTarget, part)
         local screenPos, onScreen = worldToScreen(info.Position)
         if onScreen then info.ScreenDistance = (screenPos - screenCenter()).Magnitude end
         return info
     end
-    return lockedTargetLastInfo
+    return getgenv().lockedTargetLastInfo
 end
 
 local function acquireTarget()
     local currentInfo = nil
-    if lockedTarget then
-        currentInfo = targetInfo(lockedTarget, Config.Aim.StickyMultiplier)
+    if getgenv().lockedTarget then
+        currentInfo = targetInfo(getgenv().lockedTarget, Config.Aim.StickyMultiplier)
         if currentInfo then
             currentInfo.Score = currentInfo.Score * 0.78
-            lockedTargetLastInfo = currentInfo
-            lockedTargetLastValidAt = os.clock()
+            getgenv().lockedTargetLastInfo = currentInfo
+            getgenv().lockedTargetLastValidAt = os.clock()
         else
             currentInfo = keepLockedTargetThroughGrace()
         end
     end
     local best = nil
     iterateEnemies(function(entity)
-        if entity ~= lockedTarget then
+        if entity ~= getgenv().lockedTarget then
             local info = targetInfo(entity, 1)
             if info and (not best or info.Score < best.Score) then best = info end
         end
@@ -1187,24 +1210,24 @@ local function acquireTarget()
         local threshold = math.clamp(tonumber(Config.Aim.SwitchThreshold) or 0.12, 0, 0.90)
         local requiredScore = currentInfo.Score * (1 - threshold)
         local delay = math.max(tonumber(Config.Aim.SwitchDelay) or 0, 0)
-        local delayPassed = (os.clock() - lastTargetChangeAt) >= delay
+        local delayPassed = (os.clock() - getgenv().lastTargetChangeAt) >= delay
         if not delayPassed or best.Score >= requiredScore then return currentInfo end
     end
     if best then
-        if lockedTarget ~= best.Entity then lastTargetChangeAt = os.clock() end
-        lockedTarget = best.Entity
-        lockedTargetLastInfo = best
-        lockedTargetLastValidAt = os.clock()
+        if getgenv().lockedTarget ~= best.Entity then getgenv().lastTargetChangeAt = os.clock() end
+        getgenv().lockedTarget = best.Entity
+        getgenv().lockedTargetLastInfo = best
+        getgenv().lockedTargetLastValidAt = os.clock()
         return best
     end
-    lockedTarget = nil
-    lockedTargetLastInfo = nil
+    getgenv().lockedTarget = nil
+    getgenv().lockedTargetLastInfo = nil
     return nil
 end
 
 local function localPlayerAlive()
-    if LocalEntity then
-        local alive = safeCall(function() return LocalEntity:IsAlive() end)
+    if getgenv().LocalEntity then
+        local alive = safeCall(function() return getgenv().LocalEntity:IsAlive() end)
         if alive ~= nil then return alive == true end
     end
     local character = LocalPlayer.Character
@@ -1241,12 +1264,12 @@ end
 
 local function autoShootActive()
     if not Config.Aim.AutoShoot then return false end
-    if not combatRuntimeActive() then lockedTarget = nil return false end
+    if not combatRuntimeActive() then getgenv().lockedTarget = nil return false end
     refreshLocalEntity()
     if not localPlayerAlive() then return false end
-    if WatchingHelper and WatchingHelper.Watching and WatchingHelper.Watching ~= LocalPlayer then return false end
-    if CameraController and CameraController.IsBusy then
-        local busy = safeCall(CameraController.IsBusy)
+    if getgenv().WatchingHelper and getgenv().WatchingHelper.Watching and getgenv().WatchingHelper.Watching ~= LocalPlayer then return false end
+    if getgenv().CameraController and getgenv().CameraController.IsBusy then
+        local busy = safeCall(getgenv().CameraController.IsBusy)
         if busy == true then return false end
     end
     if Config.Aim.AutoShootKeybindEnabled then
@@ -1257,12 +1280,12 @@ end
 
 local function aimActive()
     if not Config.Aim.Enabled then return false end
-    if not combatRuntimeActive() then lockedTarget = nil return false end
+    if not combatRuntimeActive() then getgenv().lockedTarget = nil return false end
     refreshLocalEntity()
     if not localPlayerAlive() then return false end
-    if WatchingHelper and WatchingHelper.Watching and WatchingHelper.Watching ~= LocalPlayer then return false end
-    if CameraController and CameraController.IsBusy then
-        local busy = safeCall(CameraController.IsBusy)
+    if getgenv().WatchingHelper and getgenv().WatchingHelper.Watching and getgenv().WatchingHelper.Watching ~= LocalPlayer then return false end
+    if getgenv().CameraController and getgenv().CameraController.IsBusy then
+        local busy = safeCall(getgenv().CameraController.IsBusy)
         if busy == true then return false end
     end
     if Config.Aim.AimKeybindEnabled then
@@ -1277,9 +1300,9 @@ local function triggerBotActive()
     if not combatRuntimeActive() then return false end
     refreshLocalEntity()
     if not localPlayerAlive() then return false end
-    if WatchingHelper and WatchingHelper.Watching and WatchingHelper.Watching ~= LocalPlayer then return false end
-    if CameraController and CameraController.IsBusy then
-        local busy = safeCall(CameraController.IsBusy)
+    if getgenv().WatchingHelper and getgenv().WatchingHelper.Watching and getgenv().WatchingHelper.Watching ~= LocalPlayer then return false end
+    if getgenv().CameraController and getgenv().CameraController.IsBusy then
+        local busy = safeCall(getgenv().CameraController.IsBusy)
         if busy == true then return false end
     end
     if Config.TriggerBot.HoldKeyEnabled then
@@ -1290,8 +1313,8 @@ local function triggerBotActive()
 end
 
 local function getLocalShootable()
-    if not WeaponController or type(WeaponController.GetWeapon) ~= "function" then return nil end
-    local weapon = safeCall(function() return WeaponController.GetWeapon() end)
+    if not getgenv().WeaponController or type(getgenv().WeaponController.GetWeapon) ~= "function" then return nil end
+    local weapon = safeCall(function() return getgenv().WeaponController.GetWeapon() end)
     if not weapon then return nil end
     local function fromWeapon(candidate)
         if type(candidate) ~= "table" then return nil end
@@ -1325,15 +1348,15 @@ local function sendPrimaryFireInput()
         if ok then return true end
     end
     if type(mouse1press) == "function" and type(mouse1release) == "function" then
-        if autoShootPressPending then return false end
-        autoShootPressPending = true
+        if getgenv().autoShootPressPending then return false end
+        getgenv().autoShootPressPending = true
         local ok = pcall(mouse1press)
         task.delay(0.018, function()
             pcall(mouse1release)
-            autoShootPressPending = false
+            getgenv().autoShootPressPending = false
         end)
         if ok then return true end
-        autoShootPressPending = false
+        getgenv().autoShootPressPending = false
     end
     local okService, vim = pcall(function() return game:GetService("VirtualInputManager") end)
     if okService and vim then
@@ -1362,7 +1385,7 @@ end
 
 local function tryAutoShoot(info)
     if not Config.Aim.AutoShoot or not info or not info.Entity then return end
-    if lockedTarget ~= info.Entity or not isEnemy(info.Entity) then return end
+    if getgenv().lockedTarget ~= info.Entity or not isEnemy(info.Entity) then return end
     if not combatRuntimeActive() or not localPlayerAlive() then return end
     if normalizeAutoShootButton(Config.Aim.AutoShootButton) ~= "LMB" and nativeMouseButtonHeld("LMB") then return end
     local screenPos, onScreen = worldToScreen(info.Position)
@@ -1374,14 +1397,14 @@ local function tryAutoShoot(info)
     if not freshInfo then return end
     local now = os.clock()
     local delay = math.clamp(tonumber(Config.Aim.AutoShootDelay) or 0, 0, 1)
-    if lastAutoShootTarget ~= info.Entity then
-        lastAutoShootTarget = info.Entity
-        lastAutoShotAttemptAt = 0
-    elseif delay > 0 and (now - lastAutoShotAttemptAt) < delay then
+    if getgenv().lastAutoShootTarget ~= info.Entity then
+        getgenv().lastAutoShootTarget = info.Entity
+        getgenv().lastAutoShotAttemptAt = 0
+    elseif delay > 0 and (now - getgenv().lastAutoShotAttemptAt) < delay then
         return
     end
-    lastAutoShotAttemptAt = now
-    if sendPrimaryFireInput() then lastAutoShotAt = now end
+    getgenv().lastAutoShotAttemptAt = now
+    if sendPrimaryFireInput() then getgenv().lastAutoShotAt = now end
 end
 
 local function tryTriggerBot()
@@ -1425,8 +1448,8 @@ local function tryTriggerBot()
     if not best then return end
     local now = os.clock()
     local delay = math.clamp(tonumber(Config.TriggerBot.Delay) or 0.05, 0, 1)
-    if now - lastTriggerShotAt < delay then return end
-    if sendPrimaryFireInput() then lastTriggerShotAt = now end
+    if now - getgenv().lastTriggerShotAt < delay then return end
+    if sendPrimaryFireInput() then getgenv().lastTriggerShotAt = now end
 end
 
 local function applyAim(dt)
@@ -1434,14 +1457,14 @@ local function applyAim(dt)
     local shouldAutoShoot = autoShootActive()
     if not shouldAim and not shouldAutoShoot then
         if not combatRuntimeActive() or not localPlayerAlive() or (not Config.Aim.Enabled and not Config.Aim.AutoShoot) then
-            lockedTarget = nil
-            lockedTargetLastInfo = nil
+            getgenv().lockedTarget = nil
+            getgenv().lockedTargetLastInfo = nil
         end
         return
     end
     local info = acquireTarget()
     if not info then return end
-    lockedTarget = info.Entity
+    getgenv().lockedTarget = info.Entity
     local cam = currentCamera()
     if not cam then return end
     if shouldAim then
@@ -1468,8 +1491,8 @@ local function applyAim(dt)
         end
     end
     pcall(function()
-        if CameraController and CameraController.UpdateTarging then
-            CameraController.UpdateTarging()
+        if getgenv().CameraController and getgenv().CameraController.UpdateTarging then
+            getgenv().CameraController.UpdateTarging()
         end
     end)
     if shouldAutoShoot then tryAutoShoot(info) end
@@ -1499,7 +1522,7 @@ local function makeText(parent)
 end
 
 local function createESP(entity)
-    if espObjects[entity] then return espObjects[entity] end
+    if getgenv().espObjects[entity] then return getgenv().espObjects[entity] end
     local holder = Instance.new("Frame")
     holder.Name = "EntityESP"
     holder.BackgroundTransparency = 1
@@ -1567,19 +1590,19 @@ local function createESP(entity)
         HealthBack = hpBack, HealthFill = hpFill,
         Highlight = highlight,
     }
-    espObjects[entity] = object
+    getgenv().espObjects[entity] = object
     return object
 end
 
 local function removeESP(entity)
-    local object = espObjects[entity]
+    local object = getgenv().espObjects[entity]
     if not object then return end
     for _, instance in pairs(object) do
         if typeof(instance) == "Instance" then
             pcall(function() instance:Destroy() end)
         end
     end
-    espObjects[entity] = nil
+    getgenv().espObjects[entity] = nil
 end
 
 local function getBounds(entity)
@@ -1637,7 +1660,7 @@ end
 
 local function updateESP()
     if not Config.ESP.Enabled or not combatRuntimeActive() then
-        for _, object in pairs(espObjects) do hideESPObject(object) end
+        for _, object in pairs(getgenv().espObjects) do hideESPObject(object) end
         return
     end
     local seen = {}
@@ -1647,19 +1670,19 @@ local function updateESP()
         seen[entity] = true
         local position = getAimPosition(entity)
         if not position then
-            local object = espObjects[entity]
+            local object = getgenv().espObjects[entity]
             if object then hideESPObject(object) end
             return
         end
         local distance = (position - cam.CFrame.Position).Magnitude
         if distance > Config.ESP.MaxDistance then
-            local object = espObjects[entity]
+            local object = getgenv().espObjects[entity]
             if object then hideESPObject(object) end
             return
         end
         local object = createESP(entity)
         local minX, minY, width, height, model = getBounds(entity)
-        local locked = entity == lockedTarget
+        local locked = entity == getgenv().lockedTarget
         local mainColor = locked and Color3.fromRGB(100, 255, 125) or baseColor
         object.BoxStroke.Color = mainColor
         object.Highlight.FillColor = mainColor
@@ -1686,7 +1709,7 @@ local function updateESP()
             object.Holder.Visible = false
         end
     end)
-    for entity, _ in pairs(espObjects) do
+    for entity, _ in pairs(getgenv().espObjects) do
         if not seen[entity] or not isAlive(entity) then removeESP(entity) end
     end
 end
@@ -1716,14 +1739,14 @@ local function updateFOV()
     FOVRing.Size = UDim2.fromOffset(diameter, diameter)
     FOVRing.Visible = Config.Aim.ShowFOV and Config.Aim.Enabled and combatRuntimeActive()
     local baseColor = getCurrentFOVColor()
-    FOVStroke.Color = lockedTarget and Color3.fromRGB(100, 255, 125) or baseColor
+    FOVStroke.Color = getgenv().lockedTarget and Color3.fromRGB(100, 255, 125) or baseColor
 end
 
 local TOGGLE_KEY = Enum.KeyCode.RightAlt
 
 local Window = VindUI:CreateWindow({
     Title = "Scared Ware UI",
-    Subtitle = "Sniper Arena · v0.2",
+    Subtitle = "Sniper Arena · v0.3",
     Icon = "Lucide:ghost",
     Size = UDim2.fromOffset(660, 500),
     MinSize = Vector2.new(500, 360),
@@ -1738,38 +1761,110 @@ local Window = VindUI:CreateWindow({
 
 VindUI:Notify({
     Title = "Scared Ware UI",
-    Text = "Sniper Arena v0.2 loaded",
+    Text = "Sniper Arena v0.3 loaded",
     Type = "success",
     Duration = 4,
 })
 
-local MainGroup = Window:AddTabGroup({Name = "MAIN"})
-local ToolsGroup = Window:AddTabGroup({Name = "TOOLS"})
+getgenv().MainGroup = Window:AddTabGroup({Name = "MAIN"})
+getgenv().ToolsGroup = Window:AddTabGroup({Name = "TOOLS"})
 
-local CombatTab = MainGroup:AddTab({ Name = "Combat", Icon = "Lucide:crosshair" })
-local TriggerTab = MainGroup:AddTab({ Name = "Trigger", Icon = "Lucide:zap" })
-local VisualTab = MainGroup:AddTab({ Name = "Visuals", Icon = "Lucide:eye" })
-local MovementTab = MainGroup:AddTab({ Name = "Movement", Icon = "Lucide:move-3d" })
-local KeybindsTab = MainGroup:AddTab({ Name = "Keybinds", Icon = "Lucide:keyboard" })
+getgenv().CombatTab = getgenv().MainGroup:AddTab({ Name = "Combat", Icon = "Lucide:crosshair" })
+getgenv().TriggerTab = getgenv().MainGroup:AddTab({ Name = "Trigger", Icon = "Lucide:zap" })
+getgenv().VisualTab = getgenv().MainGroup:AddTab({ Name = "Visuals", Icon = "Lucide:eye" })
+getgenv().MovementTab = getgenv().MainGroup:AddTab({ Name = "Movement", Icon = "Lucide:move-3d" })
+getgenv().KeybindsTab = getgenv().MainGroup:AddTab({ Name = "Keybinds", Icon = "Lucide:keyboard" })
 
-local LegitTab = ToolsGroup:AddTab({ Name = "Legit", Icon = "Lucide:user-check" })
-local RageTab = ToolsGroup:AddTab({ Name = "Rage", Icon = "Lucide:flame" })
-local ThemesTab = ToolsGroup:AddTab({ Name = "Themes", Icon = "Lucide:palette" })
-local ConfigsTab = ToolsGroup:AddTab({ Name = "Configs", Icon = "Lucide:save" })
-local SettingsTab = ToolsGroup:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
-local HomeTab = ToolsGroup:AddTab({ Name = "Home", Icon = "Lucide:layout-dashboard" })
+getgenv().LegitTab = getgenv().ToolsGroup:AddTab({ Name = "Legit", Icon = "Lucide:user-check" })
+getgenv().RageTab = getgenv().ToolsGroup:AddTab({ Name = "Rage", Icon = "Lucide:flame" })
+getgenv().ThemesTab = getgenv().ToolsGroup:AddTab({ Name = "Themes", Icon = "Lucide:palette" })
+local ThemeSection = getgenv().ThemesTab:AddCollapsibleSection({Title = "Theme Picker", Icon = "Lucide:palette"})
 
-local UIControls = {}
-local syncUIFromConfig
-local LegitModeLabel
-local RageModeLabel
+ThemeSection:AddParagraph({
+    Title = "Change Theme",
+    Icon = "Lucide:info",
+    Text = "Pick one of the built-in themes. Applied instantly across the entire UI.",
+})
 
-local IntegrationSection = CombatTab:AddCollapsibleSection({Title = "Game Integration", Icon = "Lucide:server"})
-local BackendStatusLabel = IntegrationSection:AddLabel(moduleInitState)
+local CurrentThemeLabel = ThemeSection:AddLabel("Current: " .. tostring(getgenv().CONFIG.Theme))
 
-setStatus = function(text)
-    moduleInitState = tostring(text or "Unknown")
-    if BackendStatusLabel and BackendStatusLabel.Set then BackendStatusLabel:Set(moduleInitState) end
+local AvailableThemes = {"Dark", "Light", "Midnight", "Forest"}
+
+getgenv().applyTheme = function(themeName)
+    local ok, err = pcall(function() VindUI:SetTheme(themeName) end)
+    if ok then
+        getgenv().CONFIG.Theme = themeName
+        if CurrentThemeLabel and CurrentThemeLabel.Set then CurrentThemeLabel:Set("Current: " .. themeName) end
+        VindUI:Notify({Title = "Theme", Text = themeName .. " applied", Type = "success", Duration = 2})
+    else
+        VindUI:Notify({Title = "Theme", Text = "Failed: " .. tostring(err), Type = "error", Duration = 2})
+    end
+end
+
+ThemeSection:AddDropdown({
+    Text = "Select Theme",
+    Flag = "ThemeSelect",
+    Options = AvailableThemes,
+    Default = getgenv().CONFIG.Theme,
+    Callback = function(option)
+        local value = type(option) == "table" and option[1] or option
+        getgenv().applyTheme(value)
+    end,
+})
+
+ThemeSection:AddDivider()
+
+ThemeSection:AddButton({
+    Text = "Dark Theme",
+    Icon = "Lucide:moon",
+    Callback = function() getgenv().applyTheme("Dark") end,
+})
+
+ThemeSection:AddButton({
+    Text = "Light Theme",
+    Icon = "Lucide:sun",
+    Callback = function() getgenv().applyTheme("Light") end,
+})
+
+ThemeSection:AddButton({
+    Text = "Midnight Theme",
+    Icon = "Lucide:star",
+    Callback = function() getgenv().applyTheme("Midnight") end,
+})
+
+ThemeSection:AddButton({
+    Text = "Forest Theme",
+    Icon = "Lucide:trees",
+    Callback = function() getgenv().applyTheme("Forest") end,
+})
+
+ThemeSection:AddDivider()
+
+ThemeSection:AddButton({
+    Text = "Random Theme",
+    Icon = "Lucide:shuffle",
+    Callback = function()
+        local random = AvailableThemes[math.random(1, #AvailableThemes)]
+        getgenv().applyTheme(random)
+    end,
+})
+getgenv().ConfigsTab = getgenv().ToolsGroup:AddTab({ Name = "Configs", Icon = "Lucide:save" })
+getgenv().SettingsTab = getgenv().ToolsGroup:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
+getgenv().HomeTab = getgenv().ToolsGroup:AddTab({ Name = "Home", Icon = "Lucide:layout-dashboard" })
+getgenv().ServerTab = getgenv().ToolsGroup:AddTab({ Name = "Server", Icon = "Lucide:server" })
+getgenv().ConfigTab = getgenv().ToolsGroup:AddTab({ Name = "Editor", Icon = "Lucide:edit-3" })
+
+getgenv().UIControls = {}
+getgenv().syncUIFromConfig = nil
+getgenv().LegitModeLabel = nil
+getgenv().RageModeLabel = nil
+
+local IntegrationSection = getgenv().CombatTab:AddCollapsibleSection({Title = "Game Integration", Icon = "Lucide:server"})
+local BackendStatusLabel = IntegrationSection:AddLabel(getgenv().moduleInitState)
+
+getgenv().setStatus = function(text)
+    getgenv().moduleInitState = tostring(text or "Unknown")
+    if BackendStatusLabel and BackendStatusLabel.Set then BackendStatusLabel:Set(getgenv().moduleInitState) end
 end
 
 IntegrationSection:AddLabel("Native game hooks are used when available; replicated fallback otherwise.")
@@ -1777,16 +1872,16 @@ IntegrationSection:AddLabel("Native game hooks are used when available; replicat
 local RuntimeStatusLabel = IntegrationSection:AddLabel(getRuntimeStatusText())
 IntegrationSection:AddLabel("Universe-based support: all Sniper Arena subplaces accepted.")
 
-local AimSection = CombatTab:AddCollapsibleSection({Title = "Auto Aim", Icon = "Lucide:crosshair"})
+local AimSection = getgenv().CombatTab:AddCollapsibleSection({Title = "Auto Aim", Icon = "Lucide:crosshair"})
 
-UIControls.AimEnabled = AimSection:AddToggle({
+getgenv().UIControls.AimEnabled = AimSection:AddToggle({
     Text = "Enable Auto Aim",
     Flag = "AimEnabled",
     Default = Config.Aim.Enabled,
-    Callback = function(value) Config.Aim.Enabled = value if not value then lockedTarget = nil end end,
+    Callback = function(value) Config.Aim.Enabled = value if not value then getgenv().lockedTarget = nil end end,
 })
 
-UIControls.AimActivation = AimSection:AddDropdown({
+getgenv().UIControls.AimActivation = AimSection:AddDropdown({
     Text = "Aim Activation",
     Flag = "AimActivation",
     Options = {"Hold RMB", "Always On"},
@@ -1795,28 +1890,28 @@ UIControls.AimActivation = AimSection:AddDropdown({
         local value = type(option) == "table" and option[1] or option
         Config.Aim.HoldRMB = value ~= "Always On"
         Config.Aim.AimKeybindEnabled = false
-        lockedTarget = nil
+        getgenv().lockedTarget = nil
         VindUI:Notify({Title = "Auto Aim", Text = Config.Aim.HoldRMB and "Hold RMB" or "Always On", Type = "info", Duration = 2})
     end,
 })
 
 AimSection:AddLabel("Always On aims whenever you are in an active combat state.")
 
-local AutoShootSection = CombatTab:AddCollapsibleSection({Title = "Auto Shoot", Icon = "Lucide:target"})
+local AutoShootSection = getgenv().CombatTab:AddCollapsibleSection({Title = "Auto Shoot", Icon = "Lucide:target"})
 
-UIControls.AutoShoot = AutoShootSection:AddToggle({
+getgenv().UIControls.AutoShoot = AutoShootSection:AddToggle({
     Text = "Enable Auto Shoot",
     Flag = "AutoShoot",
     Default = Config.Aim.AutoShoot,
     Callback = function(value)
         Config.Aim.AutoShoot = value
-        lastAutoShotAt = 0
-        lastAutoShotAttemptAt = 0
-        lastAutoShootTarget = nil
+        getgenv().lastAutoShotAt = 0
+        getgenv().lastAutoShotAttemptAt = 0
+        getgenv().lastAutoShootTarget = nil
     end,
 })
 
-UIControls.AutoShootButton = AutoShootSection:AddDropdown({
+getgenv().UIControls.AutoShootButton = AutoShootSection:AddDropdown({
     Text = "Auto Shoot Button",
     Flag = "AutoShootButton",
     Options = {"RMB", "LMB"},
@@ -1825,14 +1920,14 @@ UIControls.AutoShootButton = AutoShootSection:AddDropdown({
         local value = type(option) == "table" and option[1] or option
         Config.Aim.AutoShootButton = normalizeAutoShootButton(value)
         Config.Aim.AutoShootKeybindEnabled = false
-        lastAutoShotAt = 0
-        lastAutoShotAttemptAt = 0
-        lastAutoShootTarget = nil
+        getgenv().lastAutoShotAt = 0
+        getgenv().lastAutoShotAttemptAt = 0
+        getgenv().lastAutoShootTarget = nil
         VindUI:Notify({Title = "Auto Shoot", Text = "Button: " .. Config.Aim.AutoShootButton, Type = "info", Duration = 2})
     end,
 })
 
-UIControls.AutoShootRadius = AutoShootSection:AddSlider({
+getgenv().UIControls.AutoShootRadius = AutoShootSection:AddSlider({
     Text = "Shoot Radius",
     Flag = "AutoShootRadius",
     Min = 2, Max = 30, Default = Config.Aim.AutoShootRadius, Increment = 1,
@@ -1840,7 +1935,7 @@ UIControls.AutoShootRadius = AutoShootSection:AddSlider({
     Callback = function(value) Config.Aim.AutoShootRadius = value end,
 })
 
-UIControls.AutoShootDelay = AutoShootSection:AddSlider({
+getgenv().UIControls.AutoShootDelay = AutoShootSection:AddSlider({
     Text = "Extra Shot Delay",
     Flag = "AutoShootDelay",
     Min = 0.00, Max = 0.50, Default = Config.Aim.AutoShootDelay, Increment = 0.01,
@@ -1848,9 +1943,9 @@ UIControls.AutoShootDelay = AutoShootSection:AddSlider({
     Callback = function(value) Config.Aim.AutoShootDelay = value end,
 })
 
-local AimPointSection = CombatTab:AddCollapsibleSection({Title = "Aim Point / Lock", Icon = "Lucide:locate-fixed"})
+local AimPointSection = getgenv().CombatTab:AddCollapsibleSection({Title = "Aim Point / Lock", Icon = "Lucide:locate-fixed"})
 
-UIControls.AimPoint = AimPointSection:AddDropdown({
+getgenv().UIControls.AimPoint = AimPointSection:AddDropdown({
     Text = "Aim Point",
     Flag = "AimPoint",
     Options = {"Head", "Upper Torso", "Closest Part"},
@@ -1859,57 +1954,57 @@ UIControls.AimPoint = AimPointSection:AddDropdown({
         local value = type(option) == "table" and option[1] or option
         Config.Aim.AimPoint = value or "Head"
         Config.Aim.HeadPriority = Config.Aim.AimPoint == "Head"
-        lockedTarget = nil
+        getgenv().lockedTarget = nil
     end,
 })
 
-UIControls.StickyTarget = AimPointSection:AddToggle({
+getgenv().UIControls.StickyTarget = AimPointSection:AddToggle({
     Text = "Sticky Target",
     Flag = "StickyTarget",
     Default = Config.Aim.StickyTarget,
-    Callback = function(value) Config.Aim.StickyTarget = value if not value then lockedTarget = nil end end,
+    Callback = function(value) Config.Aim.StickyTarget = value if not value then getgenv().lockedTarget = nil end end,
 })
 
-local VisibilitySection = CombatTab:AddCollapsibleSection({Title = "Visibility", Icon = "Lucide:eye"})
+local VisibilitySection = getgenv().CombatTab:AddCollapsibleSection({Title = "Visibility", Icon = "Lucide:eye"})
 
-UIControls.VisibleCheck = VisibilitySection:AddToggle({
+getgenv().UIControls.VisibleCheck = VisibilitySection:AddToggle({
     Text = "Wall / Visibility Check",
     Flag = "VisibleCheck",
     Default = Config.Aim.VisibleCheck,
-    Callback = function(value) Config.Aim.VisibleCheck = value lockedTarget = nil end,
+    Callback = function(value) Config.Aim.VisibleCheck = value getgenv().lockedTarget = nil end,
 })
 
-UIControls.GameVisibility = VisibilitySection:AddToggle({
+getgenv().UIControls.GameVisibility = VisibilitySection:AddToggle({
     Text = "Respect Game Visibility",
     Flag = "GameVisibility",
     Default = Config.Aim.RespectGameVisibility,
     Callback = function(value) Config.Aim.RespectGameVisibility = value end,
 })
 
-UIControls.RespectSmoke = VisibilitySection:AddToggle({
+getgenv().UIControls.RespectSmoke = VisibilitySection:AddToggle({
     Text = "Respect Smoke",
     Flag = "RespectSmoke",
     Default = Config.Aim.RespectSmoke,
     Callback = function(value) Config.Aim.RespectSmoke = value end,
 })
 
-UIControls.RespectFlash = VisibilitySection:AddToggle({
+getgenv().UIControls.RespectFlash = VisibilitySection:AddToggle({
     Text = "Respect Flash",
     Flag = "RespectFlash",
     Default = Config.Aim.RespectFlash,
     Callback = function(value) Config.Aim.RespectFlash = value end,
 })
 
-local FOVSection = CombatTab:AddCollapsibleSection({Title = "FOV / Response", Icon = "Lucide:radius"})
+local FOVSection = getgenv().CombatTab:AddCollapsibleSection({Title = "FOV / Response", Icon = "Lucide:radius"})
 
-UIControls.ShowFOV = FOVSection:AddToggle({
+getgenv().UIControls.ShowFOV = FOVSection:AddToggle({
     Text = "Show FOV Circle",
     Flag = "ShowFOV",
     Default = Config.Aim.ShowFOV,
     Callback = function(value) Config.Aim.ShowFOV = value end,
 })
 
-UIControls.FOV = FOVSection:AddSlider({
+getgenv().UIControls.FOV = FOVSection:AddSlider({
     Text = "FOV Radius",
     Flag = "FOV",
     Min = 40, Max = 600, Default = Config.Aim.FOV, Increment = 5,
@@ -1917,47 +2012,47 @@ UIControls.FOV = FOVSection:AddSlider({
     Callback = function(value) Config.Aim.FOV = value end,
 })
 
-UIControls.AimSpeed = FOVSection:AddSlider({
+getgenv().UIControls.AimSpeed = FOVSection:AddSlider({
     Text = "Aim Speed",
     Flag = "AimSpeed",
     Min = 4, Max = 120, Default = Config.Aim.SmoothSpeed, Increment = 1,
     Callback = function(value) Config.Aim.SmoothSpeed = value end,
 })
 
-UIControls.AimDistance = FOVSection:AddSlider({
+getgenv().UIControls.AimDistance = FOVSection:AddSlider({
     Text = "Aim Max Distance",
     Flag = "AimDistance",
     Min = 100, Max = 700, Default = Config.Aim.MaxDistance, Increment = 25,
     Suffix = " studs",
-    Callback = function(value) Config.Aim.MaxDistance = value lockedTarget = nil end,
+    Callback = function(value) Config.Aim.MaxDistance = value getgenv().lockedTarget = nil end,
 })
 
-local FOVColorSection = CombatTab:AddCollapsibleSection({Title = "FOV Colors", Icon = "Lucide:palette", Collapsed = true})
+local FOVColorSection = getgenv().CombatTab:AddCollapsibleSection({Title = "FOV Colors", Icon = "Lucide:palette", Collapsed = true})
 
 FOVColorSection:AddDropdown({
     Text = "FOV Color Mode",
     Flag = "FOVColorMode",
     Options = {"Custom", "Rainbow"},
-    Default = FOVColorState.mode,
+    Default = getgenv().FOVColorState.mode,
     Callback = function(option)
         local value = type(option) == "table" and option[1] or option
-        FOVColorState.mode = value or "Custom"
+        getgenv().FOVColorState.mode = value or "Custom"
     end,
 })
 
 FOVColorSection:AddColorPicker({
     Text = "FOV Custom Color",
     Flag = "FOVCustomColor",
-    Default = FOVColorState.custom,
+    Default = getgenv().FOVColorState.custom,
     Callback = function(color)
-        FOVColorState.custom = color
-        FOVColorState.mode = "Custom"
+        getgenv().FOVColorState.custom = color
+        getgenv().FOVColorState.mode = "Custom"
     end,
 })
 
-local AdvTargetSection = CombatTab:AddCollapsibleSection({Title = "Advanced Targeting", Icon = "Lucide:cpu", Collapsed = true})
+local AdvTargetSection = getgenv().CombatTab:AddCollapsibleSection({Title = "Advanced Targeting", Icon = "Lucide:cpu", Collapsed = true})
 
-UIControls.TargetPriority = AdvTargetSection:AddDropdown({
+getgenv().UIControls.TargetPriority = AdvTargetSection:AddDropdown({
     Text = "Target Priority",
     Flag = "TargetPriority",
     Options = {"Crosshair", "Distance", "Low Health", "Hybrid"},
@@ -1965,18 +2060,18 @@ UIControls.TargetPriority = AdvTargetSection:AddDropdown({
     Callback = function(option)
         local value = type(option) == "table" and option[1] or option
         Config.Aim.TargetPriority = value or "Hybrid"
-        lockedTarget = nil
+        getgenv().lockedTarget = nil
     end,
 })
 
-UIControls.Prediction = AdvTargetSection:AddToggle({
+getgenv().UIControls.Prediction = AdvTargetSection:AddToggle({
     Text = "Motion Prediction",
     Flag = "Prediction",
     Default = Config.Aim.Prediction,
     Callback = function(value) Config.Aim.Prediction = value end,
 })
 
-UIControls.PredictionTime = AdvTargetSection:AddSlider({
+getgenv().UIControls.PredictionTime = AdvTargetSection:AddSlider({
     Text = "Prediction Time",
     Flag = "PredictionTime",
     Min = 0, Max = 0.30, Default = Config.Aim.PredictionTime, Increment = 0.01,
@@ -1984,14 +2079,14 @@ UIControls.PredictionTime = AdvTargetSection:AddSlider({
     Callback = function(value) Config.Aim.PredictionTime = value end,
 })
 
-UIControls.AdaptiveSmoothing = AdvTargetSection:AddToggle({
+getgenv().UIControls.AdaptiveSmoothing = AdvTargetSection:AddToggle({
     Text = "Adaptive Smoothing",
     Flag = "AdaptiveSmoothing",
     Default = Config.Aim.AdaptiveSmoothing,
     Callback = function(value) Config.Aim.AdaptiveSmoothing = value end,
 })
 
-UIControls.MicroSnap = AdvTargetSection:AddSlider({
+getgenv().UIControls.MicroSnap = AdvTargetSection:AddSlider({
     Text = "Micro Snap Radius",
     Flag = "MicroSnap",
     Min = 0, Max = 10, Default = Config.Aim.MicroSnapRadius, Increment = 0.5,
@@ -1999,7 +2094,7 @@ UIControls.MicroSnap = AdvTargetSection:AddSlider({
     Callback = function(value) Config.Aim.MicroSnapRadius = value end,
 })
 
-UIControls.SwitchDelay = AdvTargetSection:AddSlider({
+getgenv().UIControls.SwitchDelay = AdvTargetSection:AddSlider({
     Text = "Target Switch Delay",
     Flag = "SwitchDelay",
     Min = 0, Max = 0.30, Default = Config.Aim.SwitchDelay, Increment = 0.01,
@@ -2007,9 +2102,9 @@ UIControls.SwitchDelay = AdvTargetSection:AddSlider({
     Callback = function(value) Config.Aim.SwitchDelay = value end,
 })
 
-local LockSection = CombatTab:AddCollapsibleSection({Title = "Lock Stability", Icon = "Lucide:anchor", Collapsed = true})
+local LockSection = getgenv().CombatTab:AddCollapsibleSection({Title = "Lock Stability", Icon = "Lucide:anchor", Collapsed = true})
 
-UIControls.LockGrace = LockSection:AddSlider({
+getgenv().UIControls.LockGrace = LockSection:AddSlider({
     Text = "Target Lock Grace",
     Flag = "LockGrace",
     Min = 0, Max = 0.50, Default = Config.Aim.LockGrace, Increment = 0.01,
@@ -2017,21 +2112,21 @@ UIControls.LockGrace = LockSection:AddSlider({
     Callback = function(value) Config.Aim.LockGrace = value end,
 })
 
-UIControls.SwitchThreshold = LockSection:AddSlider({
+getgenv().UIControls.SwitchThreshold = LockSection:AddSlider({
     Text = "Switch Improvement Required",
     Flag = "SwitchThreshold",
     Min = 0, Max = 0.50, Default = Config.Aim.SwitchThreshold, Increment = 0.01,
     Callback = function(value) Config.Aim.SwitchThreshold = value end,
 })
 
-UIControls.PredictionSmoothing = LockSection:AddSlider({
+getgenv().UIControls.PredictionSmoothing = LockSection:AddSlider({
     Text = "Prediction Stability",
     Flag = "PredictionSmoothing",
     Min = 0, Max = 0.95, Default = Config.Aim.PredictionSmoothing, Increment = 0.01,
     Callback = function(value) Config.Aim.PredictionSmoothing = value end,
 })
 
-UIControls.MaxPredictionOffset = LockSection:AddSlider({
+getgenv().UIControls.MaxPredictionOffset = LockSection:AddSlider({
     Text = "Max Prediction Offset",
     Flag = "MaxPredictionOffset",
     Min = 0, Max = 30, Default = Config.Aim.MaxPredictionOffset, Increment = 1,
@@ -2039,7 +2134,7 @@ UIControls.MaxPredictionOffset = LockSection:AddSlider({
     Callback = function(value) Config.Aim.MaxPredictionOffset = value end,
 })
 
-local TriggerSection = TriggerTab:AddCollapsibleSection({Title = "Trigger Bot", Icon = "Lucide:zap"})
+local TriggerSection = getgenv().TriggerTab:AddCollapsibleSection({Title = "Trigger Bot", Icon = "Lucide:zap"})
 
 TriggerSection:AddParagraph({
     Title = "Trigger Bot",
@@ -2047,7 +2142,7 @@ TriggerSection:AddParagraph({
     Text = "Automatically fires when your crosshair passes over an enemy.",
 })
 
-UIControls.TriggerBotEnabled = TriggerSection:AddToggle({
+getgenv().UIControls.TriggerBotEnabled = TriggerSection:AddToggle({
     Text = "Enable Trigger Bot",
     Flag = "TriggerBotEnabled",
     Default = Config.TriggerBot.Enabled,
@@ -2057,14 +2152,14 @@ UIControls.TriggerBotEnabled = TriggerSection:AddToggle({
     end,
 })
 
-UIControls.TriggerBotWallCheck = TriggerSection:AddToggle({
+getgenv().UIControls.TriggerBotWallCheck = TriggerSection:AddToggle({
     Text = "Wall Check",
     Flag = "TriggerBotWallCheck",
     Default = Config.TriggerBot.WallCheck,
     Callback = function(value) Config.TriggerBot.WallCheck = value end,
 })
 
-UIControls.TriggerBotRadius = TriggerSection:AddSlider({
+getgenv().UIControls.TriggerBotRadius = TriggerSection:AddSlider({
     Text = "Trigger Radius",
     Flag = "TriggerBotRadius",
     Min = 1, Max = 50, Default = Config.TriggerBot.Radius, Increment = 1,
@@ -2072,7 +2167,7 @@ UIControls.TriggerBotRadius = TriggerSection:AddSlider({
     Callback = function(value) Config.TriggerBot.Radius = value end,
 })
 
-UIControls.TriggerBotDelay = TriggerSection:AddSlider({
+getgenv().UIControls.TriggerBotDelay = TriggerSection:AddSlider({
     Text = "Trigger Delay",
     Flag = "TriggerBotDelay",
     Min = 0, Max = 0.50, Default = Config.TriggerBot.Delay, Increment = 0.01,
@@ -2080,7 +2175,7 @@ UIControls.TriggerBotDelay = TriggerSection:AddSlider({
     Callback = function(value) Config.TriggerBot.Delay = value end,
 })
 
-local TriggerHoldSection = TriggerTab:AddCollapsibleSection({Title = "Hold Key", Icon = "Lucide:keyboard"})
+local TriggerHoldSection = getgenv().TriggerTab:AddCollapsibleSection({Title = "Hold Key", Icon = "Lucide:keyboard"})
 
 TriggerHoldSection:AddToggle({
     Text = "Enable Hold Key",
@@ -2098,7 +2193,7 @@ TriggerHoldSection:AddKeybind({
     end,
 })
 
-local KeybindAimSection = KeybindsTab:AddCollapsibleSection({Title = "Auto Aim Keybind", Icon = "Lucide:crosshair"})
+local KeybindAimSection = getgenv().KeybindsTab:AddCollapsibleSection({Title = "Auto Aim Keybind", Icon = "Lucide:crosshair"})
 
 KeybindAimSection:AddToggle({
     Text = "Enable Custom Aim Keybind",
@@ -2107,7 +2202,7 @@ KeybindAimSection:AddToggle({
     Callback = function(value)
         Config.Aim.AimKeybindEnabled = value
         if value then Config.Aim.HoldRMB = false end
-        lockedTarget = nil
+        getgenv().lockedTarget = nil
         VindUI:Notify({Title = "Aim Keybind", Text = value and "Enabled" or "Disabled", Type = value and "success" or "warning", Duration = 2})
     end,
 })
@@ -2121,7 +2216,7 @@ KeybindAimSection:AddKeybind({
     end,
 })
 
-local KeybindShootSection = KeybindsTab:AddCollapsibleSection({Title = "Auto Shoot Keybind", Icon = "Lucide:target"})
+local KeybindShootSection = getgenv().KeybindsTab:AddCollapsibleSection({Title = "Auto Shoot Keybind", Icon = "Lucide:target"})
 
 KeybindShootSection:AddToggle({
     Text = "Enable Custom Auto Shoot Keybind",
@@ -2142,7 +2237,7 @@ KeybindShootSection:AddKeybind({
     end,
 })
 
-local MenuKeySection = KeybindsTab:AddCollapsibleSection({Title = "Menu", Icon = "Lucide:keyboard"})
+local MenuKeySection = getgenv().KeybindsTab:AddCollapsibleSection({Title = "Menu", Icon = "Lucide:keyboard"})
 
 MenuKeySection:AddKeybind({
     Text = "Toggle Menu",
@@ -2153,71 +2248,71 @@ MenuKeySection:AddKeybind({
     end,
 })
 
-local ESPMainSection = VisualTab:AddCollapsibleSection({Title = "ESP", Icon = "Lucide:eye"})
+local ESPMainSection = getgenv().VisualTab:AddCollapsibleSection({Title = "ESP", Icon = "Lucide:eye"})
 
-UIControls.ESPEnabled = ESPMainSection:AddToggle({
+getgenv().UIControls.ESPEnabled = ESPMainSection:AddToggle({
     Text = "Enable ESP",
     Flag = "ESPEnabled",
     Default = Config.ESP.Enabled,
     Callback = function(value)
         Config.ESP.Enabled = value
         if not value then
-            for _, object in pairs(espObjects) do hideESPObject(object) end
+            for _, object in pairs(getgenv().espObjects) do hideESPObject(object) end
         end
     end,
 })
 
-UIControls.Boxes = ESPMainSection:AddToggle({
+getgenv().UIControls.Boxes = ESPMainSection:AddToggle({
     Text = "Boxes", Flag = "ESPBoxes", Default = Config.ESP.Boxes,
     Callback = function(value) Config.ESP.Boxes = value end,
 })
 
-UIControls.Names = ESPMainSection:AddToggle({
+getgenv().UIControls.Names = ESPMainSection:AddToggle({
     Text = "Names", Flag = "ESPNnames", Default = Config.ESP.Names,
     Callback = function(value) Config.ESP.Names = value end,
 })
 
-UIControls.Health = ESPMainSection:AddToggle({
+getgenv().UIControls.Health = ESPMainSection:AddToggle({
     Text = "Health", Flag = "ESPHealth", Default = Config.ESP.Health,
     Callback = function(value) Config.ESP.Health = value end,
 })
 
-UIControls.Distance = ESPMainSection:AddToggle({
+getgenv().UIControls.Distance = ESPMainSection:AddToggle({
     Text = "Distance", Flag = "ESPDistance", Default = Config.ESP.Distance,
     Callback = function(value) Config.ESP.Distance = value end,
 })
 
-UIControls.Chams = ESPMainSection:AddToggle({
+getgenv().UIControls.Chams = ESPMainSection:AddToggle({
     Text = "Chams", Flag = "ESPChams", Default = Config.ESP.Chams,
     Callback = function(value) Config.ESP.Chams = value end,
 })
 
-local ESPColorSection = VisualTab:AddCollapsibleSection({Title = "ESP Colors", Icon = "Lucide:palette"})
+local ESPColorSection = getgenv().VisualTab:AddCollapsibleSection({Title = "ESP Colors", Icon = "Lucide:palette"})
 
 ESPColorSection:AddDropdown({
     Text = "ESP Color Mode",
     Flag = "ESPColorMode",
     Options = {"Custom", "Rainbow"},
-    Default = ESPColorState.mode,
+    Default = getgenv().ESPColorState.mode,
     Callback = function(option)
         local value = type(option) == "table" and option[1] or option
-        ESPColorState.mode = value or "Custom"
+        getgenv().ESPColorState.mode = value or "Custom"
     end,
 })
 
 ESPColorSection:AddColorPicker({
     Text = "ESP Custom Color",
     Flag = "ESPCustomColor",
-    Default = ESPColorState.custom,
+    Default = getgenv().ESPColorState.custom,
     Callback = function(color)
-        ESPColorState.custom = color
-        ESPColorState.mode = "Custom"
+        getgenv().ESPColorState.custom = color
+        getgenv().ESPColorState.mode = "Custom"
     end,
 })
 
-local ESPRangeSection = VisualTab:AddCollapsibleSection({Title = "ESP Range", Icon = "Lucide:maximize"})
+local ESPRangeSection = getgenv().VisualTab:AddCollapsibleSection({Title = "ESP Range", Icon = "Lucide:maximize"})
 
-UIControls.ESPDistance = ESPRangeSection:AddSlider({
+getgenv().UIControls.ESPDistance = ESPRangeSection:AddSlider({
     Text = "ESP Max Distance",
     Flag = "ESPMaxDistance",
     Min = 100, Max = 3000, Default = Config.ESP.MaxDistance, Increment = 50,
@@ -2225,57 +2320,54 @@ UIControls.ESPDistance = ESPRangeSection:AddSlider({
     Callback = function(value) Config.ESP.MaxDistance = value end,
 })
 
-getgenv()._jumpEnabled = false
-getgenv()._jumpValue = 90
-
-MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddToggle({
+getgenv().MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddToggle({
     Text = "Enable Jump Hack",
     Flag = "JumpEnabled",
-    Default = false,
-    Callback = function(value) getgenv()._jumpEnabled = value end,
+    Default = Config.Movement.JumpEnabled,
+    Callback = function(value)
+        Config.Movement.JumpEnabled = value
+        VindUI:Notify({Title = "Jump Hack", Text = value and "Enabled" or "Disabled", Type = value and "success" or "warning", Duration = 2})
+    end,
 })
 
-MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddSlider({
+getgenv().MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddSlider({
     Text = "Jump Power",
     Flag = "JumpValue",
-    Min = 50, Max = 200, Default = 90, Increment = 5,
-    Callback = function(value) getgenv()._jumpValue = value end,
+    Min = 50, Max = 200, Default = Config.Movement.JumpValue, Increment = 5,
+    Callback = function(value) Config.Movement.JumpValue = value end,
 })
 
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
-    if getgenv()._jumpEnabled then
-        hum.JumpPower = getgenv()._jumpValue
+    if Config.Movement.JumpEnabled then
+        hum.JumpPower = Config.Movement.JumpValue
         hum.UseJumpPower = true
     else
         hum.JumpPower = 50
     end
 end)
 
-local ServerTab = ToolsGroup:AddTab({Name = "Server", Icon = "Lucide:server"})
-
-ServerTab:AddButton({
+getgenv().ServerTab:AddButton({
     Text = "Rejoin Server",
     Icon = "Lucide:refresh-cw",
     Callback = function()
-        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end,
 })
 
-ServerTab:AddButton({
+getgenv().ServerTab:AddButton({
     Text = "Server Hop",
     Icon = "Lucide:shuffle",
     Callback = function()
-        local Http = game:GetService("HttpService")
         local ok, servers = pcall(function()
-            return Http:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"))
+            return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"))
         end)
         if ok and servers and servers.data then
             for _, s in ipairs(servers.data) do
                 if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
                     return
                 end
             end
@@ -2284,24 +2376,18 @@ ServerTab:AddButton({
     end,
 })
 
-local ConfigTab = ToolsGroup:AddTab({ Name = "Config", Icon = "Lucide:settings-2" })
+local RS_Config = ReplicatedStorage
 
-local RS_Config = game:GetService("ReplicatedStorage")
-
-local ok, GameConfig = pcall(function()
+local okCfg, GameConfig = pcall(function()
     return require(RS_Config.Config.Config)
 end)
 
-if not ok or type(GameConfig) ~= "table" then
-    ConfigTab:AddParagraph({
-        Title = "Config Unavailable",
+if not okCfg or type(GameConfig) ~= "table" then
+    getgenv().ConfigTab:AddParagraph({
+        Title = "Editor Unavailable",
         Text = "Could not load ReplicatedStorage.Config.Config.",
     })
 else
-    local function makeSection(name, icon)
-        return ConfigTab:AddCollapsibleSection({Title = name, Icon = icon})
-    end
-
     getgenv()._cfgValues = getgenv()._cfgValues or {}
     getgenv()._cfgOriginal = getgenv()._cfgOriginal or {}
     getgenv()._cfgEnabled = getgenv()._cfgEnabled or {}
@@ -2337,8 +2423,8 @@ else
         getgenv()._cfgEnabled = {}
     end
 
-    local function addCfgToggle(section, key, label, icon, defaultValue)
-        local sectionObj = makeSection(section .. " · " .. label, icon or "Lucide:settings")
+    local function addCfgToggle(section, key, label, icon, defaultValue, minVal, maxVal, increment)
+        local sectionObj = getgenv().ConfigTab:AddCollapsibleSection({Title = section .. " · " .. label, Icon = icon or "Lucide:settings"})
 
         sectionObj:AddToggle({
             Text = "Enable " .. label,
@@ -2349,10 +2435,10 @@ else
                 if value then
                     saveOriginal(section, key, GameConfig[section][key])
                     applyValue(section, key, getgenv()._cfgValues[section .. "." .. key] or defaultValue)
-                    VindUI:Notify({Title = "Config", Text = label .. " ON", Type = "success", Duration = 1.5})
+                    VindUI:Notify({Title = "Editor", Text = label .. " ON", Type = "success", Duration = 1.5})
                 else
                     restoreValue(section, key)
-                    VindUI:Notify({Title = "Config", Text = label .. " OFF", Type = "warning", Duration = 1.5})
+                    VindUI:Notify({Title = "Editor", Text = label .. " OFF", Type = "warning", Duration = 1.5})
                 end
             end,
         })
@@ -2360,7 +2446,7 @@ else
         sectionObj:AddSlider({
             Text = label .. " Value",
             Flag = "CfgVal_" .. section .. "_" .. key,
-            Min = -100000, Max = 100000, Default = defaultValue, Increment = 1,
+            Min = minVal, Max = maxVal, Default = defaultValue, Increment = increment,
             Callback = function(v)
                 getgenv()._cfgValues[section .. "." .. key] = v
                 if getgenv()._cfgEnabled[section .. "." .. key] then
@@ -2371,93 +2457,93 @@ else
     end
 
     if GameConfig.Team then
-        addCfgToggle("Team", "MaxSize", "Max Team Size", "Lucide:users", tonumber(GameConfig.Team.MaxSize) or 10)
+        addCfgToggle("Team", "MaxSize", "Max Team Size", "Lucide:users", tonumber(GameConfig.Team.MaxSize) or 10, 1, 100, 1)
     end
 
     if GameConfig.Game then
-        addCfgToggle("Game", "EndTime", "End Time", "Lucide:clock", tonumber(GameConfig.Game.EndTime) or 60)
-        addCfgToggle("Game", "VoteTime", "Vote Time", "Lucide:vote", tonumber(GameConfig.Game.VoteTime) or 15)
-        addCfgToggle("Game", "ShowMapTime", "Show Map Time", "Lucide:map", tonumber(GameConfig.Game.ShowMapTime) or 5)
-        addCfgToggle("Game", "AreaWarningTime", "Area Warning Time", "Lucide:alert-triangle", tonumber(GameConfig.Game.AreaWarningTime) or 5)
+        addCfgToggle("Game", "EndTime", "End Time", "Lucide:clock", tonumber(GameConfig.Game.EndTime) or 60, 1, 600, 1)
+        addCfgToggle("Game", "VoteTime", "Vote Time", "Lucide:vote", tonumber(GameConfig.Game.VoteTime) or 15, 1, 120, 1)
+        addCfgToggle("Game", "ShowMapTime", "Show Map Time", "Lucide:map", tonumber(GameConfig.Game.ShowMapTime) or 5, 1, 60, 1)
+        addCfgToggle("Game", "AreaWarningTime", "Area Warning Time", "Lucide:alert-triangle", tonumber(GameConfig.Game.AreaWarningTime) or 5, 1, 60, 1)
     end
 
     if GameConfig.GameStarter then
-        addCfgToggle("GameStarter", "StartTime", "Start Time", "Lucide:play", tonumber(GameConfig.GameStarter.StartTime) or 5)
+        addCfgToggle("GameStarter", "StartTime", "Start Time", "Lucide:play", tonumber(GameConfig.GameStarter.StartTime) or 5, 1, 60, 1)
     end
 
     if GameConfig.Movement then
-        addCfgToggle("Movement", "SprintSpeed", "Sprint Speed", "Lucide:gauge", tonumber(GameConfig.Movement.SprintSpeed) or 16)
-        addCfgToggle("Movement", "SlideSpeed", "Slide Speed", "Lucide:wind", tonumber(GameConfig.Movement.SlideSpeed) or 16)
-        addCfgToggle("Movement", "SlideTime", "Slide Time", "Lucide:timer", tonumber(GameConfig.Movement.SlideTime) or 1)
-        addCfgToggle("Movement", "SlideHeight", "Slide Height", "Lucide:arrow-up", tonumber(GameConfig.Movement.SlideHeight) or 1)
-        addCfgToggle("Movement", "SlideInterval", "Slide Interval", "Lucide:repeat", tonumber(GameConfig.Movement.SlideInterval) or 0.5)
-        addCfgToggle("Movement", "SlideForceTime", "Slide Force Time", "Lucide:zap", tonumber(GameConfig.Movement.SlideForceTime) or 0.5)
-        addCfgToggle("Movement", "JumpInterval", "Jump Interval", "Lucide:arrow-up-circle", tonumber(GameConfig.Movement.JumpInterval) or 0.5)
-        addCfgToggle("Movement", "CrouchSpeed", "Crouch Speed", "Lucide:arrow-down", tonumber(GameConfig.Movement.CrouchSpeed) or 8)
-        addCfgToggle("Movement", "SneakSpeed", "Sneak Speed", "Lucide:footprints", tonumber(GameConfig.Movement.SneakSpeed) or 8)
+        addCfgToggle("Movement", "SprintSpeed", "Sprint Speed", "Lucide:gauge", tonumber(GameConfig.Movement.SprintSpeed) or 16, 1, 100, 1)
+        addCfgToggle("Movement", "SlideSpeed", "Slide Speed", "Lucide:wind", tonumber(GameConfig.Movement.SlideSpeed) or 16, 1, 100, 1)
+        addCfgToggle("Movement", "SlideTime", "Slide Time", "Lucide:timer", tonumber(GameConfig.Movement.SlideTime) or 1, 0, 10, 0.1)
+        addCfgToggle("Movement", "SlideHeight", "Slide Height", "Lucide:arrow-up", tonumber(GameConfig.Movement.SlideHeight) or 1, 0, 10, 0.1)
+        addCfgToggle("Movement", "SlideInterval", "Slide Interval", "Lucide:repeat", tonumber(GameConfig.Movement.SlideInterval) or 0.5, 0, 5, 0.05)
+        addCfgToggle("Movement", "SlideForceTime", "Slide Force Time", "Lucide:zap", tonumber(GameConfig.Movement.SlideForceTime) or 0.5, 0, 5, 0.05)
+        addCfgToggle("Movement", "JumpInterval", "Jump Interval", "Lucide:arrow-up-circle", tonumber(GameConfig.Movement.JumpInterval) or 0.5, 0, 10, 0.05)
+        addCfgToggle("Movement", "CrouchSpeed", "Crouch Speed", "Lucide:arrow-down", tonumber(GameConfig.Movement.CrouchSpeed) or 8, 1, 100, 1)
+        addCfgToggle("Movement", "SneakSpeed", "Sneak Speed", "Lucide:footprints", tonumber(GameConfig.Movement.SneakSpeed) or 8, 1, 100, 1)
     end
 
     if GameConfig.Combat then
-        addCfgToggle("Combat", "BulletSpeed", "Bullet Speed", "Lucide:zap", tonumber(GameConfig.Combat.BulletSpeed) or 1000)
-        addCfgToggle("Combat", "BulletMaxDistance", "Bullet Max Distance", "Lucide:target", tonumber(GameConfig.Combat.BulletMaxDistance) or 1000)
-        addCfgToggle("Combat", "ThrowPower", "Throw Power", "Lucide:hand", tonumber(GameConfig.Combat.ThrowPower) or 100)
-        addCfgToggle("Combat", "HeadshotDamage", "Headshot Damage", "Lucide:skull", tonumber(GameConfig.Combat.HeadshotDamage) or 100)
-        addCfgToggle("Combat", "AimWalkSpeed", "Aim Walk Speed", "Lucide:crosshair", tonumber(GameConfig.Combat.AimWalkSpeed) or 0)
-        addCfgToggle("Combat", "KillTimeout", "Kill Timeout", "Lucide:hourglass", tonumber(GameConfig.Combat.KillTimeout) or 1)
+        addCfgToggle("Combat", "BulletSpeed", "Bullet Speed", "Lucide:zap", tonumber(GameConfig.Combat.BulletSpeed) or 1000, 0, 50000, 100)
+        addCfgToggle("Combat", "BulletMaxDistance", "Bullet Max Distance", "Lucide:target", tonumber(GameConfig.Combat.BulletMaxDistance) or 1000, 0, 20000, 100)
+        addCfgToggle("Combat", "ThrowPower", "Throw Power", "Lucide:hand", tonumber(GameConfig.Combat.ThrowPower) or 100, 0, 5000, 10)
+        addCfgToggle("Combat", "HeadshotDamage", "Headshot Damage", "Lucide:skull", tonumber(GameConfig.Combat.HeadshotDamage) or 100, 0, 999, 5)
+        addCfgToggle("Combat", "AimWalkSpeed", "Aim Walk Speed", "Lucide:crosshair", tonumber(GameConfig.Combat.AimWalkSpeed) or 0, -50, 100, 1)
+        addCfgToggle("Combat", "KillTimeout", "Kill Timeout", "Lucide:hourglass", tonumber(GameConfig.Combat.KillTimeout) or 1, 0, 10, 0.1)
     end
 
     if GameConfig.VIP then
-        addCfgToggle("VIP", "GameExp", "VIP Game EXP", "Lucide:crown", tonumber(GameConfig.VIP.GameExp) or 1)
-        addCfgToggle("VIP", "NonGameCoin", "VIP Non Game Coin", "Lucide:coins", tonumber(GameConfig.VIP.NonGameCoin) or 1)
-        addCfgToggle("VIP", "WeaponSellExtraRate", "VIP Weapon Sell Extra", "Lucide:dollar-sign", tonumber(GameConfig.VIP.WeaponSellExtraRate) or 1)
+        addCfgToggle("VIP", "GameExp", "VIP Game EXP", "Lucide:crown", tonumber(GameConfig.VIP.GameExp) or 1, 0, 100, 0.05)
+        addCfgToggle("VIP", "NonGameCoin", "VIP Non Game Coin", "Lucide:coins", tonumber(GameConfig.VIP.NonGameCoin) or 1, 0, 100, 0.01)
+        addCfgToggle("VIP", "WeaponSellExtraRate", "VIP Weapon Sell Extra", "Lucide:dollar-sign", tonumber(GameConfig.VIP.WeaponSellExtraRate) or 1, 0, 100, 0.01)
     end
 
     if GameConfig.Premium then
-        addCfgToggle("Premium", "GameExp", "Premium Game EXP", "Lucide:gem", tonumber(GameConfig.Premium.GameExp) or 1)
-        addCfgToggle("Premium", "GameCoin", "Premium Game Coin", "Lucide:coins", tonumber(GameConfig.Premium.GameCoin) or 1)
+        addCfgToggle("Premium", "GameExp", "Premium Game EXP", "Lucide:gem", tonumber(GameConfig.Premium.GameExp) or 1, 0, 1000, 1)
+        addCfgToggle("Premium", "GameCoin", "Premium Game Coin", "Lucide:coins", tonumber(GameConfig.Premium.GameCoin) or 1, 0, 1000, 1)
     end
 
-    ConfigTab:AddDivider()
+    getgenv().ConfigTab:AddDivider()
 
-    ConfigTab:AddButton({
+    getgenv().ConfigTab:AddButton({
         Text = "Reset All Configs",
         Icon = "Lucide:rotate-ccw",
         Callback = function()
             restoreAll()
-            VindUI:Notify({Title = "Config", Text = "All configs restored to original", Type = "success", Duration = 2})
+            VindUI:Notify({Title = "Editor", Text = "All configs restored to original", Type = "success", Duration = 2})
         end,
     })
 
-    ConfigTab:AddLabel("Each toggle enables/disables its value. Sliders save the value to use when the toggle is ON.")
+    getgenv().ConfigTab:AddLabel("Each toggle enables/disables its value. Sliders save the value to use when the toggle is ON.")
 end
 
-local function updateAimModeLabels()
+getgenv().updateAimModeLabels = function()
     local text = "Current mode • " .. tostring(Config.AimMode or "Custom")
-    if LegitModeLabel and LegitModeLabel.Set then LegitModeLabel:Set(text) end
-    if RageModeLabel and RageModeLabel.Set then RageModeLabel:Set(text) end
+    if getgenv().LegitModeLabel and getgenv().LegitModeLabel.Set then getgenv().LegitModeLabel:Set(text) end
+    if getgenv().RageModeLabel and getgenv().RageModeLabel.Set then getgenv().RageModeLabel:Set(text) end
 end
 
-local function applyAimPreset(name, values, notification)
+getgenv().applyAimPreset = function(name, values, notification)
     ConfigStore.Applying = true
     Config.AimMode = name
     for key, value in pairs(values or {}) do
         if Config.Aim[key] ~= nil then Config.Aim[key] = value end
     end
     ConfigStore.Applying = false
-    lockedTarget = nil
-    if syncUIFromConfig then syncUIFromConfig() end
-    updateAimModeLabels()
+    getgenv().lockedTarget = nil
+    if getgenv().syncUIFromConfig then getgenv().syncUIFromConfig() end
+    getgenv().updateAimModeLabels()
     VindUI:Notify({Title = name, Text = notification or (name .. " applied"), Type = "success", Duration = 2.2})
 end
 
-local LegitSection = LegitTab:AddCollapsibleSection({Title = "Legit Aim", Icon = "Lucide:user-check"})
-LegitModeLabel = LegitSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
+local LegitSection = getgenv().LegitTab:AddCollapsibleSection({Title = "Legit Aim", Icon = "Lucide:user-check"})
+getgenv().LegitModeLabel = LegitSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
 
 LegitSection:AddButton({
     Text = "Legit • Subtle",
     Icon = "Lucide:feather",
     Callback = function()
-        applyAimPreset("Legit • Subtle", {
+        getgenv().applyAimPreset("Legit • Subtle", {
             Enabled = true, HoldRMB = true, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = true, RespectFlash = true,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2475,7 +2561,7 @@ LegitSection:AddButton({
     Text = "Legit • Balanced",
     Icon = "Lucide:scale",
     Callback = function()
-        applyAimPreset("Legit • Balanced", {
+        getgenv().applyAimPreset("Legit • Balanced", {
             Enabled = true, HoldRMB = true, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = true, RespectFlash = true,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2493,7 +2579,7 @@ LegitSection:AddButton({
     Text = "Legit • Strong",
     Icon = "Lucide:zap",
     Callback = function()
-        applyAimPreset("Legit • Strong", {
+        getgenv().applyAimPreset("Legit • Strong", {
             Enabled = true, HoldRMB = true, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = true, RespectFlash = true,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2507,14 +2593,14 @@ LegitSection:AddButton({
     end,
 })
 
-local RageSection = RageTab:AddCollapsibleSection({Title = "Rage Aim", Icon = "Lucide:flame"})
-RageModeLabel = RageSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
+local RageSection = getgenv().RageTab:AddCollapsibleSection({Title = "Rage Aim", Icon = "Lucide:flame"})
+getgenv().RageModeLabel = RageSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
 
 RageSection:AddButton({
     Text = "Rage • Visible",
     Icon = "Lucide:eye",
     Callback = function()
-        applyAimPreset("Rage • Visible", {
+        getgenv().applyAimPreset("Rage • Visible", {
             Enabled = true, HoldRMB = false, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = false, RespectFlash = false,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2532,7 +2618,7 @@ RageSection:AddButton({
     Text = "Rage • Max",
     Icon = "Lucide:flame",
     Callback = function()
-        applyAimPreset("Rage • Max", {
+        getgenv().applyAimPreset("Rage • Max", {
             Enabled = true, HoldRMB = false, VisibleCheck = false,
             RespectGameVisibility = false, RespectSmoke = false, RespectFlash = false,
             HeadPriority = true, AimPoint = "Closest Part", Prediction = true,
@@ -2546,46 +2632,46 @@ RageSection:AddButton({
     end,
 })
 
-syncUIFromConfig = function()
+getgenv().syncUIFromConfig = function()
     ConfigStore.Applying = true
     local pairsToSet = {
-        {UIControls.AimEnabled, Config.Aim.Enabled},
-        {UIControls.AimActivation, Config.Aim.HoldRMB and "Hold RMB" or "Always On"},
-        {UIControls.AutoShoot, Config.Aim.AutoShoot},
-        {UIControls.AutoShootButton, normalizeAutoShootButton(Config.Aim.AutoShootButton)},
-        {UIControls.AutoShootRadius, Config.Aim.AutoShootRadius},
-        {UIControls.AutoShootDelay, Config.Aim.AutoShootDelay},
-        {UIControls.AimPoint, Config.Aim.AimPoint},
-        {UIControls.StickyTarget, Config.Aim.StickyTarget},
-        {UIControls.VisibleCheck, Config.Aim.VisibleCheck},
-        {UIControls.GameVisibility, Config.Aim.RespectGameVisibility},
-        {UIControls.RespectSmoke, Config.Aim.RespectSmoke},
-        {UIControls.RespectFlash, Config.Aim.RespectFlash},
-        {UIControls.ShowFOV, Config.Aim.ShowFOV},
-        {UIControls.FOV, Config.Aim.FOV},
-        {UIControls.AimSpeed, Config.Aim.SmoothSpeed},
-        {UIControls.AimDistance, Config.Aim.MaxDistance},
-        {UIControls.TargetPriority, Config.Aim.TargetPriority},
-        {UIControls.Prediction, Config.Aim.Prediction},
-        {UIControls.PredictionTime, Config.Aim.PredictionTime},
-        {UIControls.AdaptiveSmoothing, Config.Aim.AdaptiveSmoothing},
-        {UIControls.MicroSnap, Config.Aim.MicroSnapRadius},
-        {UIControls.SwitchDelay, Config.Aim.SwitchDelay},
-        {UIControls.LockGrace, Config.Aim.LockGrace},
-        {UIControls.SwitchThreshold, Config.Aim.SwitchThreshold},
-        {UIControls.PredictionSmoothing, Config.Aim.PredictionSmoothing},
-        {UIControls.MaxPredictionOffset, Config.Aim.MaxPredictionOffset},
-        {UIControls.TriggerBotEnabled, Config.TriggerBot.Enabled},
-        {UIControls.TriggerBotWallCheck, Config.TriggerBot.WallCheck},
-        {UIControls.TriggerBotRadius, Config.TriggerBot.Radius},
-        {UIControls.TriggerBotDelay, Config.TriggerBot.Delay},
-        {UIControls.ESPEnabled, Config.ESP.Enabled},
-        {UIControls.Boxes, Config.ESP.Boxes},
-        {UIControls.Names, Config.ESP.Names},
-        {UIControls.Health, Config.ESP.Health},
-        {UIControls.Distance, Config.ESP.Distance},
-        {UIControls.Chams, Config.ESP.Chams},
-        {UIControls.ESPDistance, Config.ESP.MaxDistance},
+        {getgenv().UIControls.AimEnabled, Config.Aim.Enabled},
+        {getgenv().UIControls.AimActivation, Config.Aim.HoldRMB and "Hold RMB" or "Always On"},
+        {getgenv().UIControls.AutoShoot, Config.Aim.AutoShoot},
+        {getgenv().UIControls.AutoShootButton, normalizeAutoShootButton(Config.Aim.AutoShootButton)},
+        {getgenv().UIControls.AutoShootRadius, Config.Aim.AutoShootRadius},
+        {getgenv().UIControls.AutoShootDelay, Config.Aim.AutoShootDelay},
+        {getgenv().UIControls.AimPoint, Config.Aim.AimPoint},
+        {getgenv().UIControls.StickyTarget, Config.Aim.StickyTarget},
+        {getgenv().UIControls.VisibleCheck, Config.Aim.VisibleCheck},
+        {getgenv().UIControls.GameVisibility, Config.Aim.RespectGameVisibility},
+        {getgenv().UIControls.RespectSmoke, Config.Aim.RespectSmoke},
+        {getgenv().UIControls.RespectFlash, Config.Aim.RespectFlash},
+        {getgenv().UIControls.ShowFOV, Config.Aim.ShowFOV},
+        {getgenv().UIControls.FOV, Config.Aim.FOV},
+        {getgenv().UIControls.AimSpeed, Config.Aim.SmoothSpeed},
+        {getgenv().UIControls.AimDistance, Config.Aim.MaxDistance},
+        {getgenv().UIControls.TargetPriority, Config.Aim.TargetPriority},
+        {getgenv().UIControls.Prediction, Config.Aim.Prediction},
+        {getgenv().UIControls.PredictionTime, Config.Aim.PredictionTime},
+        {getgenv().UIControls.AdaptiveSmoothing, Config.Aim.AdaptiveSmoothing},
+        {getgenv().UIControls.MicroSnap, Config.Aim.MicroSnapRadius},
+        {getgenv().UIControls.SwitchDelay, Config.Aim.SwitchDelay},
+        {getgenv().UIControls.LockGrace, Config.Aim.LockGrace},
+        {getgenv().UIControls.SwitchThreshold, Config.Aim.SwitchThreshold},
+        {getgenv().UIControls.PredictionSmoothing, Config.Aim.PredictionSmoothing},
+        {getgenv().UIControls.MaxPredictionOffset, Config.Aim.MaxPredictionOffset},
+        {getgenv().UIControls.TriggerBotEnabled, Config.TriggerBot.Enabled},
+        {getgenv().UIControls.TriggerBotWallCheck, Config.TriggerBot.WallCheck},
+        {getgenv().UIControls.TriggerBotRadius, Config.TriggerBot.Radius},
+        {getgenv().UIControls.TriggerBotDelay, Config.TriggerBot.Delay},
+        {getgenv().UIControls.ESPEnabled, Config.ESP.Enabled},
+        {getgenv().UIControls.Boxes, Config.ESP.Boxes},
+        {getgenv().UIControls.Names, Config.ESP.Names},
+        {getgenv().UIControls.Health, Config.ESP.Health},
+        {getgenv().UIControls.Distance, Config.ESP.Distance},
+        {getgenv().UIControls.Chams, Config.ESP.Chams},
+        {getgenv().UIControls.ESPDistance, Config.ESP.MaxDistance},
     }
     for _, pair in ipairs(pairsToSet) do
         local control, value = pair[1], pair[2]
@@ -2594,11 +2680,11 @@ syncUIFromConfig = function()
         end
     end
     ConfigStore.Applying = false
-    lockedTarget = nil
-    updateAimModeLabels()
+    getgenv().lockedTarget = nil
+    getgenv().updateAimModeLabels()
 end
 
-local ConfigProfileSection = ConfigsTab:AddCollapsibleSection({Title = "Profiles", Icon = "Lucide:user"})
+local ConfigProfileSection = getgenv().ConfigsTab:AddCollapsibleSection({Title = "Profiles", Icon = "Lucide:user"})
 ConfigStore.StatusLabel = ConfigProfileSection:AddLabel(ConfigStore.Available and ("Ready • " .. ConfigStore.Selected) or "Unavailable • filesystem APIs missing")
 
 if ConfigStore.Available then
@@ -2638,7 +2724,7 @@ if ConfigStore.Available then
     })
     ConfigProfileSection:AddButton({
         Text = "Load Selected Profile", Icon = "Lucide:upload",
-        Callback = function() if loadConfig(ConfigStore.Selected, true) then syncUIFromConfig() end end,
+        Callback = function() if loadConfig(ConfigStore.Selected, true) then getgenv().syncUIFromConfig() end end,
     })
     ConfigProfileSection:AddButton({
         Text = "Refresh Profiles", Icon = "Lucide:refresh-cw",
@@ -2686,7 +2772,7 @@ else
     })
 end
 
-local SettingsAimSection = SettingsTab:AddCollapsibleSection({Title = "Reset Aim", Icon = "Lucide:rotate-ccw"})
+local SettingsAimSection = getgenv().SettingsTab:AddCollapsibleSection({Title = "Reset Aim", Icon = "Lucide:rotate-ccw"})
 
 SettingsAimSection:AddButton({
     Text = "Reset Aim Settings", Icon = "Lucide:rotate-ccw",
@@ -2722,13 +2808,13 @@ SettingsAimSection:AddButton({
         Config.Aim.ShowFOV = true
         Config.Aim.AimKeybindEnabled = false
         Config.Aim.AutoShootKeybindEnabled = false
-        lockedTarget = nil
-        if syncUIFromConfig then syncUIFromConfig() end
+        getgenv().lockedTarget = nil
+        if getgenv().syncUIFromConfig then getgenv().syncUIFromConfig() end
         VindUI:Notify({Title = "Sniper Arena", Text = "Aim settings reset", Type = "success", Duration = 2.5})
     end,
 })
 
-local SettingsTriggerSection = SettingsTab:AddCollapsibleSection({Title = "Reset Trigger Bot", Icon = "Lucide:rotate-ccw"})
+local SettingsTriggerSection = getgenv().SettingsTab:AddCollapsibleSection({Title = "Reset Trigger Bot", Icon = "Lucide:rotate-ccw"})
 
 SettingsTriggerSection:AddButton({
     Text = "Reset Trigger Bot Settings", Icon = "Lucide:rotate-ccw",
@@ -2738,12 +2824,12 @@ SettingsTriggerSection:AddButton({
         Config.TriggerBot.Radius = 3
         Config.TriggerBot.Delay = 0.05
         Config.TriggerBot.HoldKeyEnabled = false
-        if syncUIFromConfig then syncUIFromConfig() end
+        if getgenv().syncUIFromConfig then getgenv().syncUIFromConfig() end
         VindUI:Notify({Title = "Sniper Arena", Text = "Trigger Bot reset", Type = "success", Duration = 2.5})
     end,
 })
 
-local SettingsESPSection = SettingsTab:AddCollapsibleSection({Title = "Reset ESP", Icon = "Lucide:rotate-ccw"})
+local SettingsESPSection = getgenv().SettingsTab:AddCollapsibleSection({Title = "Reset ESP", Icon = "Lucide:rotate-ccw"})
 
 SettingsESPSection:AddButton({
     Text = "Reset ESP Settings", Icon = "Lucide:rotate-ccw",
@@ -2755,12 +2841,12 @@ SettingsESPSection:AddButton({
         Config.ESP.Distance = true
         Config.ESP.Chams = true
         Config.ESP.MaxDistance = 1200
-        if syncUIFromConfig then syncUIFromConfig() end
+        if getgenv().syncUIFromConfig then getgenv().syncUIFromConfig() end
         VindUI:Notify({Title = "Sniper Arena", Text = "ESP settings reset", Type = "success", Duration = 2.5})
     end,
 })
 
-local SettingsMenuSection = SettingsTab:AddCollapsibleSection({Title = "Menu", Icon = "Lucide:keyboard"})
+local SettingsMenuSection = getgenv().SettingsTab:AddCollapsibleSection({Title = "Menu", Icon = "Lucide:keyboard"})
 
 SettingsMenuSection:AddKeybind({
     Text = "Toggle Menu",
@@ -2771,39 +2857,36 @@ SettingsMenuSection:AddKeybind({
     end,
 })
 
-local cleanup
+getgenv().cleanup = nil
 
 SettingsMenuSection:AddButton({
     Text = "Unload Scared Ware UI",
     Icon = "Lucide:power",
-    Callback = function() if cleanup then cleanup() end end,
+    Callback = function() if getgenv().cleanup then getgenv().cleanup() end end,
 })
 
-local HomeDetailsSub = HomeTab:AddSubTab({ Name = "Details", Icon = "Lucide:layout-grid" })
-HomeDetailsSub:AddSystemInfoGrid({ Description = "Live session info" })
+getgenv().HomeDetailsSub = getgenv().HomeTab:AddSubTab({ Name = "Details", Icon = "Lucide:layout-grid" })
+getgenv().HomeDetailsSub:AddSystemInfoGrid({ Description = "Live session info" })
 
-local HomeChangelogSub = HomeTab:AddSubTab({ Name = "Changelog", Icon = "Lucide:file-text" })
+getgenv().HomeChangelogSub = getgenv().HomeTab:AddSubTab({ Name = "Changelog", Icon = "Lucide:file-text" })
 
-HomeChangelogSub:AddChangelogEntry({
-    Version = "Scared Ware UI v0.2",
+getgenv().HomeChangelogSub:AddChangelogEntry({
+    Version = "Scared Ware UI v0.3",
     Date    = "Release",
     Changes = {
-        { Type = "Added",   Text = "Migrated to Vind UI Reborn v2.9.0-modular" },
         { Type = "Added",   Text = "Auto Aim with full targeting system" },
         { Type = "Added",   Text = "Auto Shoot with RMB / LMB activation" },
         { Type = "Added",   Text = "ESP (Boxes / Names / Health / Distance / Chams)" },
-        { Type = "Added",   Text = "ESP Custom / Rainbow color modes" },
-        { Type = "Added",   Text = "FOV Custom / Rainbow color modes" },
+        { Type = "Added",   Text = "ESP / FOV Custom and Rainbow color modes" },
         { Type = "Added",   Text = "Trigger Bot with Wall Check toggle" },
         { Type = "Added",   Text = "Aim Keybind custom + Auto Shoot Keybind custom" },
-        { Type = "Added",   Text = "Hold Key option for Trigger Bot" },
         { Type = "Added",   Text = "Legit presets (Subtle / Balanced / Strong)" },
         { Type = "Added",   Text = "Rage presets (Visible / Max)" },
         { Type = "Added",   Text = "Configs system (Save / Load / Delete / AutoSave)" },
         { Type = "Added",   Text = "Theme Picker (Dark / Light / Midnight / Forest)" },
-        { Type = "Added",   Text = "Startup intro animation" },
-        { Type = "Added",   Text = "Collapsible sections and tab groups" },
-        { Type = "Added",   Text = "Universe-wide Sniper Arena support" },
+        { Type = "Added",   Text = "Server Tab (Rejoin / Server Hop)" },
+        { Type = "Added",   Text = "Editor Tab with toggles for all game Config values" },
+        { Type = "Added",   Text = "Jump Hack in Movement tab" },
         { Type = "Added",   Text = "Menu keybind: Right Alt" },
     },
 })
@@ -2815,7 +2898,7 @@ task.spawn(function()
     if ConfigStore.AutoSave and not FS.IsFile(configPath(ConfigStore.Selected)) then
         saveConfig(ConfigStore.Selected, false)
     end
-    while not destroyed do
+    while not getgenv().destroyed do
         if ConfigStore.AutoSave and not ConfigStore.Applying then
             local current = configFingerprint()
             if current ~= "" and current ~= ConfigStore.LastFingerprint then
@@ -2826,28 +2909,28 @@ task.spawn(function()
     end
 end)
 
-cleanup = function()
-    if destroyed then return end
-    destroyed = true
-    lockedTarget = nil
-    lastAutoShotAt = 0
+getgenv().cleanup = function()
+    if getgenv().destroyed then return end
+    getgenv().destroyed = true
+    getgenv().lockedTarget = nil
+    getgenv().lastAutoShotAt = 0
     if type(mouse1release) == "function" then pcall(mouse1release) end
-    autoShootPressPending = false
-    pcall(function() RunService:UnbindFromRenderStep(renderName) end)
-    for _, connection in ipairs(connections) do
+    getgenv().autoShootPressPending = false
+    pcall(function() RunService:UnbindFromRenderStep(getgenv().renderName) end)
+    for _, connection in ipairs(getgenv().connections) do
         pcall(function() connection:Disconnect() end)
     end
-    table.clear(connections)
-    for entity, _ in pairs(espObjects) do removeESP(entity) end
+    table.clear(getgenv().connections)
+    for entity, _ in pairs(getgenv().espObjects) do removeESP(entity) end
     pcall(function() ScreenGui:Destroy() end)
     pcall(function() Window:Destroy() end)
     pcall(function() VindUI:Unload() end)
-    if ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP == cleanup then
+    if ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP == getgenv().cleanup then
         ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP = nil
     end
 end
 
-ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP = cleanup
+ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP = getgenv().cleanup
 
 addConnection(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
     Camera = workspace.CurrentCamera
@@ -2855,20 +2938,20 @@ end))
 
 task.spawn(function()
     for attempt = 1, 6 do
-        if destroyed then return end
+        if getgenv().destroyed then return end
         local ok = pcall(initializeGameModules)
         if not ok then
-            moduleInitState = "READY • fallback (native init failed)"
-            setStatus(moduleInitState)
+            getgenv().moduleInitState = "READY • fallback (native init failed)"
+            getgenv().setStatus(getgenv().moduleInitState)
         end
-        if EntityService and WorldManager and CameraController and WeaponController then break end
+        if getgenv().EntityService and getgenv().WorldManager and getgenv().CameraController and getgenv().WeaponController then break end
         task.wait(2)
     end
-    if not destroyed then updateBackendStatus() end
+    if not getgenv().destroyed then updateBackendStatus() end
 end)
 
 task.spawn(function()
-    while not destroyed do
+    while not getgenv().destroyed do
         if RuntimeStatusLabel and RuntimeStatusLabel.Set then
             pcall(function() RuntimeStatusLabel:Set(getRuntimeStatusText()) end)
         end
@@ -2876,8 +2959,8 @@ task.spawn(function()
     end
 end)
 
-RunService:BindToRenderStep(renderName, Enum.RenderPriority.Camera.Value + 25, function(dt)
-    if destroyed then return end
+RunService:BindToRenderStep(getgenv().renderName, Enum.RenderPriority.Camera.Value + 25, function(dt)
+    if getgenv().destroyed then return end
     applyAim(dt)
     tryTriggerBot()
     updateFOV()
@@ -2886,5 +2969,3 @@ end)
 
 Window:SelectTab("Combat")
 Window:Open()
-
-print("[Scared Ware UI · Sniper Arena v0.2] Loaded")
