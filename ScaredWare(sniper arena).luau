@@ -2,14 +2,39 @@ if getgenv().ScaredWareSniper and getgenv().ScaredWareSniper.Unload then
     getgenv().ScaredWareSniper:Unload()
 end
 
-local compiler = loadstring or load
-if type(compiler) ~= "function" then
-    return warn("[Scared Ware UI · Sniper Arena] loadstring unavailable")
-end
+local VindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Skinny-yz/vindUI-Test/main/full.luau"))()
 
-local VindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Skinny-yz/VVind-UI/refs/heads/main/src.lua"))()
+getgenv().CONFIG = {
+    Theme = "Midnight",
+    Intro = {
+        Enabled = true,
+        Title = "Scared Ware UI",
+        Eyebrow = "SNIPER ARENA",
+        Subtitle = "Loading your workspace...",
+        Logo = "Lucide:ghost",
+        UseBlur = true,
+        Transparency = 0.22,
+        Shimmer = true,
+        Duration = 2.5,
+        Skippable = true,
+        ReducedMotion = false,
+    },
+    MobileScaleReference = 450,
+    UserInfo = {
+        Enabled = true,
+        Avatar = "player",
+        NameMode = "display",
+    },
+}
+
+VindUI:SetTheme(getgenv().CONFIG.Theme)
 VindUI:PreloadIcons({ "Lucide", "Material", "Phosphor", "SF" })
 VindUI:SetScaleRange(0.75, 1.35)
+VindUI:SetMobileScaleReference(getgenv().CONFIG.MobileScaleReference)
+
+pcall(function()
+    VindUI:ShowIntro(getgenv().CONFIG.Intro):Wait()
+end)
 
 local ENV = (getgenv and getgenv()) or _G
 if ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP then
@@ -30,7 +55,7 @@ local Camera = workspace.CurrentCamera
 local SNIPER_ARENA_UNIVERSE_ID = 9534705677
 
 if tonumber(game.GameId) ~= SNIPER_ARENA_UNIVERSE_ID then
-    warn(("[Scared Ware UI · Sniper Arena] Wrong universe. Expected %s, got %s"):format(tostring(SNIPER_ARENA_UNIVERSE_ID), tostring(game.GameId)))
+    warn(("[Scared Ware UI] Wrong universe. Expected %s, got %s"):format(tostring(SNIPER_ARENA_UNIVERSE_ID), tostring(game.GameId)))
     return
 end
 
@@ -214,7 +239,7 @@ end
 
 local function configSnapshot()
     return {
-        Version = 7,
+        Version = 8,
         AimMode = Config.AimMode,
         Aim = {
             Enabled = Config.Aim.Enabled, HoldRMB = Config.Aim.HoldRMB,
@@ -249,6 +274,7 @@ local function configSnapshot()
             Health = Config.ESP.Health, Distance = Config.ESP.Distance, Chams = Config.ESP.Chams,
             MaxDistance = Config.ESP.MaxDistance,
         },
+        Theme = VindUI._ThemeName,
     }
 end
 
@@ -280,8 +306,6 @@ local function applyConfigTable(data)
     if type(aim.AutoShootKeybind) == "string" then
         pcall(function() Config.Aim.AutoShootKeybind = Enum.KeyCode[aim.AutoShootKeybind] end)
     end
-    local savedVersion = tonumber(data.Version) or 0
-    if savedVersion < 5 and tonumber(aim.AutoShootDelay) == 0.12 then Config.Aim.AutoShootDelay = 0 end
     Config.Aim.AutoShootButton = normalizeAutoShootButton(Config.Aim.AutoShootButton)
     local tbKeys = {"Enabled", "WallCheck", "Radius", "Delay", "HoldKeyEnabled"}
     for _, key in ipairs(tbKeys) do
@@ -293,6 +317,9 @@ local function applyConfigTable(data)
     local espKeys = {"Enabled", "Boxes", "Names", "Health", "Distance", "Chams", "MaxDistance"}
     for _, key in ipairs(espKeys) do
         if esp[key] ~= nil then Config.ESP[key] = esp[key] end
+    end
+    if type(data.Theme) == "string" and data.Theme ~= "" then
+        pcall(function() VindUI:SetTheme(data.Theme) end)
     end
     ConfigStore.Applying = false
     return true
@@ -1696,62 +1723,72 @@ local TOGGLE_KEY = Enum.KeyCode.RightAlt
 
 local Window = VindUI:CreateWindow({
     Title = "Scared Ware UI",
-    Subtitle = "Sniper Arena - v0.1",
+    Subtitle = "Sniper Arena · v0.2",
     Icon = "Lucide:ghost",
-    Size = UDim2.fromOffset(660, 480),
+    Size = UDim2.fromOffset(660, 500),
     MinSize = Vector2.new(500, 360),
     Draggable = true,
     Resizable = true,
     UseBlur = true,
     DefaultTab = "Combat",
+    TabWidth = 130,
+    TabScrollbar = true,
+    UserInfo = getgenv().CONFIG.UserInfo,
 })
 
 VindUI:Notify({
     Title = "Scared Ware UI",
-    Text = "Sniper Arena v0.1 Loaded",
+    Text = "Sniper Arena v0.2 loaded",
     Type = "success",
     Duration = 4,
 })
 
-local CombatTab = Window:AddTab({ Name = "Combat", Icon = "Lucide:crosshair" })
-local TriggerTab = Window:AddTab({ Name = "Trigger Bot", Icon = "Lucide:zap" })
-local KeybindsTab = Window:AddTab({ Name = "Keybinds", Icon = "Lucide:keyboard" })
-local LegitTab = Window:AddTab({ Name = "Legit", Icon = "Lucide:user-check" })
-local RageTab = Window:AddTab({ Name = "Rage", Icon = "Lucide:flame" })
-local VisualTab = Window:AddTab({ Name = "Visuals", Icon = "Lucide:eye" })
-local SettingsTab = Window:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
-local ConfigsTab = Window:AddTab({ Name = "Configs", Icon = "Lucide:save" })
-local HomeTab = Window:AddTab({ Name = "Home", Icon = "Lucide:layout-dashboard" })
+local MainGroup = Window:AddTabGroup({Name = "MAIN"})
+local ToolsGroup = Window:AddTabGroup({Name = "TOOLS"})
+
+local CombatTab = MainGroup:AddTab({ Name = "Combat", Icon = "Lucide:crosshair" })
+local TriggerTab = MainGroup:AddTab({ Name = "Trigger", Icon = "Lucide:zap" })
+local VisualTab = MainGroup:AddTab({ Name = "Visuals", Icon = "Lucide:eye" })
+local MovementTab = MainGroup:AddTab({ Name = "Movement", Icon = "Lucide:move-3d" })
+local KeybindsTab = MainGroup:AddTab({ Name = "Keybinds", Icon = "Lucide:keyboard" })
+
+local LegitTab = ToolsGroup:AddTab({ Name = "Legit", Icon = "Lucide:user-check" })
+local RageTab = ToolsGroup:AddTab({ Name = "Rage", Icon = "Lucide:flame" })
+local ThemesTab = ToolsGroup:AddTab({ Name = "Themes", Icon = "Lucide:palette" })
+local ConfigsTab = ToolsGroup:AddTab({ Name = "Configs", Icon = "Lucide:save" })
+local SettingsTab = ToolsGroup:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
+local HomeTab = ToolsGroup:AddTab({ Name = "Home", Icon = "Lucide:layout-dashboard" })
 
 local UIControls = {}
 local syncUIFromConfig
 local LegitModeLabel
 local RageModeLabel
 
-CombatTab:AddSection("Game Integration", "Lucide:server")
-local BackendStatusLabel = CombatTab:AddLabel(moduleInitState)
+local IntegrationSection = CombatTab:AddCollapsibleSection({Title = "Game Integration", Icon = "Lucide:server"})
+local BackendStatusLabel = IntegrationSection:AddLabel(moduleInitState)
 
 setStatus = function(text)
     moduleInitState = tostring(text or "Unknown")
     if BackendStatusLabel and BackendStatusLabel.Set then BackendStatusLabel:Set(moduleInitState) end
 end
 
-CombatTab:AddLabel("Native game hooks are used when available; replicated fallback otherwise.")
+IntegrationSection:AddLabel("Native game hooks are used when available; replicated fallback otherwise.")
 
-local RuntimeStatusLabel = CombatTab:AddLabel(getRuntimeStatusText())
-CombatTab:AddLabel("Universe-based support: all current and future Sniper Arena subplaces accepted.")
+local RuntimeStatusLabel = IntegrationSection:AddLabel(getRuntimeStatusText())
+IntegrationSection:AddLabel("Universe-based support: all Sniper Arena subplaces accepted.")
 
-CombatTab:AddDivider()
-CombatTab:AddSection("Auto Aim", "Lucide:crosshair")
+local AimSection = CombatTab:AddCollapsibleSection({Title = "Auto Aim", Icon = "Lucide:crosshair"})
 
-UIControls.AimEnabled = CombatTab:AddToggle({
+UIControls.AimEnabled = AimSection:AddToggle({
     Text = "Enable Auto Aim",
+    Flag = "AimEnabled",
     Default = Config.Aim.Enabled,
     Callback = function(value) Config.Aim.Enabled = value if not value then lockedTarget = nil end end,
 })
 
-UIControls.AimActivation = CombatTab:AddDropdown({
+UIControls.AimActivation = AimSection:AddDropdown({
     Text = "Aim Activation",
+    Flag = "AimActivation",
     Options = {"Hold RMB", "Always On"},
     Default = Config.Aim.HoldRMB and "Hold RMB" or "Always On",
     Callback = function(option)
@@ -1763,11 +1800,13 @@ UIControls.AimActivation = CombatTab:AddDropdown({
     end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("Auto Shoot", "Lucide:target")
+AimSection:AddLabel("Always On aims whenever you are in an active combat state.")
 
-UIControls.AutoShoot = CombatTab:AddToggle({
+local AutoShootSection = CombatTab:AddCollapsibleSection({Title = "Auto Shoot", Icon = "Lucide:target"})
+
+UIControls.AutoShoot = AutoShootSection:AddToggle({
     Text = "Enable Auto Shoot",
+    Flag = "AutoShoot",
     Default = Config.Aim.AutoShoot,
     Callback = function(value)
         Config.Aim.AutoShoot = value
@@ -1777,8 +1816,9 @@ UIControls.AutoShoot = CombatTab:AddToggle({
     end,
 })
 
-UIControls.AutoShootButton = CombatTab:AddDropdown({
+UIControls.AutoShootButton = AutoShootSection:AddDropdown({
     Text = "Auto Shoot Button",
+    Flag = "AutoShootButton",
     Options = {"RMB", "LMB"},
     Default = normalizeAutoShootButton(Config.Aim.AutoShootButton),
     Callback = function(option)
@@ -1792,21 +1832,27 @@ UIControls.AutoShootButton = CombatTab:AddDropdown({
     end,
 })
 
-UIControls.AutoShootRadius = CombatTab:AddSlider({
-    Text = "Shoot Radius", Min = 2, Max = 30, Default = Config.Aim.AutoShootRadius, Increment = 1,
-    Suffix = " px", Callback = function(value) Config.Aim.AutoShootRadius = value end,
+UIControls.AutoShootRadius = AutoShootSection:AddSlider({
+    Text = "Shoot Radius",
+    Flag = "AutoShootRadius",
+    Min = 2, Max = 30, Default = Config.Aim.AutoShootRadius, Increment = 1,
+    Suffix = " px",
+    Callback = function(value) Config.Aim.AutoShootRadius = value end,
 })
 
-UIControls.AutoShootDelay = CombatTab:AddSlider({
-    Text = "Extra Shot Delay", Min = 0.00, Max = 0.50, Default = Config.Aim.AutoShootDelay, Increment = 0.01,
-    Suffix = " s", Callback = function(value) Config.Aim.AutoShootDelay = value end,
+UIControls.AutoShootDelay = AutoShootSection:AddSlider({
+    Text = "Extra Shot Delay",
+    Flag = "AutoShootDelay",
+    Min = 0.00, Max = 0.50, Default = Config.Aim.AutoShootDelay, Increment = 0.01,
+    Suffix = " s",
+    Callback = function(value) Config.Aim.AutoShootDelay = value end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("Aim Point / Lock", "Lucide:locate-fixed")
+local AimPointSection = CombatTab:AddCollapsibleSection({Title = "Aim Point / Lock", Icon = "Lucide:locate-fixed"})
 
-UIControls.AimPoint = CombatTab:AddDropdown({
+UIControls.AimPoint = AimPointSection:AddDropdown({
     Text = "Aim Point",
+    Flag = "AimPoint",
     Options = {"Head", "Upper Torso", "Closest Part"},
     Default = Config.Aim.AimPoint,
     Callback = function(option)
@@ -1817,69 +1863,80 @@ UIControls.AimPoint = CombatTab:AddDropdown({
     end,
 })
 
-UIControls.StickyTarget = CombatTab:AddToggle({
+UIControls.StickyTarget = AimPointSection:AddToggle({
     Text = "Sticky Target",
+    Flag = "StickyTarget",
     Default = Config.Aim.StickyTarget,
     Callback = function(value) Config.Aim.StickyTarget = value if not value then lockedTarget = nil end end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("Visibility", "Lucide:eye")
+local VisibilitySection = CombatTab:AddCollapsibleSection({Title = "Visibility", Icon = "Lucide:eye"})
 
-UIControls.VisibleCheck = CombatTab:AddToggle({
+UIControls.VisibleCheck = VisibilitySection:AddToggle({
     Text = "Wall / Visibility Check",
+    Flag = "VisibleCheck",
     Default = Config.Aim.VisibleCheck,
     Callback = function(value) Config.Aim.VisibleCheck = value lockedTarget = nil end,
 })
 
-UIControls.GameVisibility = CombatTab:AddToggle({
+UIControls.GameVisibility = VisibilitySection:AddToggle({
     Text = "Respect Game Visibility",
+    Flag = "GameVisibility",
     Default = Config.Aim.RespectGameVisibility,
     Callback = function(value) Config.Aim.RespectGameVisibility = value end,
 })
 
-UIControls.RespectSmoke = CombatTab:AddToggle({
+UIControls.RespectSmoke = VisibilitySection:AddToggle({
     Text = "Respect Smoke",
+    Flag = "RespectSmoke",
     Default = Config.Aim.RespectSmoke,
     Callback = function(value) Config.Aim.RespectSmoke = value end,
 })
 
-UIControls.RespectFlash = CombatTab:AddToggle({
+UIControls.RespectFlash = VisibilitySection:AddToggle({
     Text = "Respect Flash",
+    Flag = "RespectFlash",
     Default = Config.Aim.RespectFlash,
     Callback = function(value) Config.Aim.RespectFlash = value end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("FOV / Response", "Lucide:radius")
+local FOVSection = CombatTab:AddCollapsibleSection({Title = "FOV / Response", Icon = "Lucide:radius"})
 
-UIControls.ShowFOV = CombatTab:AddToggle({
+UIControls.ShowFOV = FOVSection:AddToggle({
     Text = "Show FOV Circle",
+    Flag = "ShowFOV",
     Default = Config.Aim.ShowFOV,
     Callback = function(value) Config.Aim.ShowFOV = value end,
 })
 
-UIControls.FOV = CombatTab:AddSlider({
-    Text = "FOV Radius", Min = 40, Max = 600, Default = Config.Aim.FOV, Increment = 5,
-    Suffix = " px", Callback = function(value) Config.Aim.FOV = value end,
+UIControls.FOV = FOVSection:AddSlider({
+    Text = "FOV Radius",
+    Flag = "FOV",
+    Min = 40, Max = 600, Default = Config.Aim.FOV, Increment = 5,
+    Suffix = " px",
+    Callback = function(value) Config.Aim.FOV = value end,
 })
 
-UIControls.AimSpeed = CombatTab:AddSlider({
-    Text = "Aim Speed", Min = 4, Max = 120, Default = Config.Aim.SmoothSpeed, Increment = 1,
+UIControls.AimSpeed = FOVSection:AddSlider({
+    Text = "Aim Speed",
+    Flag = "AimSpeed",
+    Min = 4, Max = 120, Default = Config.Aim.SmoothSpeed, Increment = 1,
     Callback = function(value) Config.Aim.SmoothSpeed = value end,
 })
 
-UIControls.AimDistance = CombatTab:AddSlider({
-    Text = "Aim Max Distance", Min = 100, Max = 700, Default = Config.Aim.MaxDistance, Increment = 25,
+UIControls.AimDistance = FOVSection:AddSlider({
+    Text = "Aim Max Distance",
+    Flag = "AimDistance",
+    Min = 100, Max = 700, Default = Config.Aim.MaxDistance, Increment = 25,
     Suffix = " studs",
     Callback = function(value) Config.Aim.MaxDistance = value lockedTarget = nil end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("FOV Colors", "Lucide:palette")
+local FOVColorSection = CombatTab:AddCollapsibleSection({Title = "FOV Colors", Icon = "Lucide:palette", Collapsed = true})
 
-CombatTab:AddDropdown({
+FOVColorSection:AddDropdown({
     Text = "FOV Color Mode",
+    Flag = "FOVColorMode",
     Options = {"Custom", "Rainbow"},
     Default = FOVColorState.mode,
     Callback = function(option)
@@ -1888,8 +1945,9 @@ CombatTab:AddDropdown({
     end,
 })
 
-CombatTab:AddColorPicker({
+FOVColorSection:AddColorPicker({
     Text = "FOV Custom Color",
+    Flag = "FOVCustomColor",
     Default = FOVColorState.custom,
     Callback = function(color)
         FOVColorState.custom = color
@@ -1897,11 +1955,11 @@ CombatTab:AddColorPicker({
     end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("Advanced Targeting", "Lucide:cpu")
+local AdvTargetSection = CombatTab:AddCollapsibleSection({Title = "Advanced Targeting", Icon = "Lucide:cpu", Collapsed = true})
 
-UIControls.TargetPriority = CombatTab:AddDropdown({
+UIControls.TargetPriority = AdvTargetSection:AddDropdown({
     Text = "Target Priority",
+    Flag = "TargetPriority",
     Options = {"Crosshair", "Distance", "Low Health", "Hybrid"},
     Default = Config.Aim.TargetPriority,
     Callback = function(option)
@@ -1911,66 +1969,87 @@ UIControls.TargetPriority = CombatTab:AddDropdown({
     end,
 })
 
-UIControls.Prediction = CombatTab:AddToggle({
+UIControls.Prediction = AdvTargetSection:AddToggle({
     Text = "Motion Prediction",
+    Flag = "Prediction",
     Default = Config.Aim.Prediction,
     Callback = function(value) Config.Aim.Prediction = value end,
 })
 
-UIControls.PredictionTime = CombatTab:AddSlider({
-    Text = "Prediction Time", Min = 0, Max = 0.30, Default = Config.Aim.PredictionTime, Increment = 0.01,
-    Suffix = " s", Callback = function(value) Config.Aim.PredictionTime = value end,
+UIControls.PredictionTime = AdvTargetSection:AddSlider({
+    Text = "Prediction Time",
+    Flag = "PredictionTime",
+    Min = 0, Max = 0.30, Default = Config.Aim.PredictionTime, Increment = 0.01,
+    Suffix = " s",
+    Callback = function(value) Config.Aim.PredictionTime = value end,
 })
 
-UIControls.AdaptiveSmoothing = CombatTab:AddToggle({
+UIControls.AdaptiveSmoothing = AdvTargetSection:AddToggle({
     Text = "Adaptive Smoothing",
+    Flag = "AdaptiveSmoothing",
     Default = Config.Aim.AdaptiveSmoothing,
     Callback = function(value) Config.Aim.AdaptiveSmoothing = value end,
 })
 
-UIControls.MicroSnap = CombatTab:AddSlider({
-    Text = "Micro Snap Radius", Min = 0, Max = 10, Default = Config.Aim.MicroSnapRadius, Increment = 0.5,
-    Suffix = " px", Callback = function(value) Config.Aim.MicroSnapRadius = value end,
+UIControls.MicroSnap = AdvTargetSection:AddSlider({
+    Text = "Micro Snap Radius",
+    Flag = "MicroSnap",
+    Min = 0, Max = 10, Default = Config.Aim.MicroSnapRadius, Increment = 0.5,
+    Suffix = " px",
+    Callback = function(value) Config.Aim.MicroSnapRadius = value end,
 })
 
-UIControls.SwitchDelay = CombatTab:AddSlider({
-    Text = "Target Switch Delay", Min = 0, Max = 0.30, Default = Config.Aim.SwitchDelay, Increment = 0.01,
-    Suffix = " s", Callback = function(value) Config.Aim.SwitchDelay = value end,
+UIControls.SwitchDelay = AdvTargetSection:AddSlider({
+    Text = "Target Switch Delay",
+    Flag = "SwitchDelay",
+    Min = 0, Max = 0.30, Default = Config.Aim.SwitchDelay, Increment = 0.01,
+    Suffix = " s",
+    Callback = function(value) Config.Aim.SwitchDelay = value end,
 })
 
-CombatTab:AddDivider()
-CombatTab:AddSection("Lock Stability", "Lucide:anchor")
+local LockSection = CombatTab:AddCollapsibleSection({Title = "Lock Stability", Icon = "Lucide:anchor", Collapsed = true})
 
-UIControls.LockGrace = CombatTab:AddSlider({
-    Text = "Target Lock Grace", Min = 0, Max = 0.50, Default = Config.Aim.LockGrace, Increment = 0.01,
-    Suffix = " s", Callback = function(value) Config.Aim.LockGrace = value end,
+UIControls.LockGrace = LockSection:AddSlider({
+    Text = "Target Lock Grace",
+    Flag = "LockGrace",
+    Min = 0, Max = 0.50, Default = Config.Aim.LockGrace, Increment = 0.01,
+    Suffix = " s",
+    Callback = function(value) Config.Aim.LockGrace = value end,
 })
 
-UIControls.SwitchThreshold = CombatTab:AddSlider({
-    Text = "Switch Improvement Required", Min = 0, Max = 0.50, Default = Config.Aim.SwitchThreshold, Increment = 0.01,
+UIControls.SwitchThreshold = LockSection:AddSlider({
+    Text = "Switch Improvement Required",
+    Flag = "SwitchThreshold",
+    Min = 0, Max = 0.50, Default = Config.Aim.SwitchThreshold, Increment = 0.01,
     Callback = function(value) Config.Aim.SwitchThreshold = value end,
 })
 
-UIControls.PredictionSmoothing = CombatTab:AddSlider({
-    Text = "Prediction Stability", Min = 0, Max = 0.95, Default = Config.Aim.PredictionSmoothing, Increment = 0.01,
+UIControls.PredictionSmoothing = LockSection:AddSlider({
+    Text = "Prediction Stability",
+    Flag = "PredictionSmoothing",
+    Min = 0, Max = 0.95, Default = Config.Aim.PredictionSmoothing, Increment = 0.01,
     Callback = function(value) Config.Aim.PredictionSmoothing = value end,
 })
 
-UIControls.MaxPredictionOffset = CombatTab:AddSlider({
-    Text = "Max Prediction Offset", Min = 0, Max = 30, Default = Config.Aim.MaxPredictionOffset, Increment = 1,
-    Suffix = " studs", Callback = function(value) Config.Aim.MaxPredictionOffset = value end,
+UIControls.MaxPredictionOffset = LockSection:AddSlider({
+    Text = "Max Prediction Offset",
+    Flag = "MaxPredictionOffset",
+    Min = 0, Max = 30, Default = Config.Aim.MaxPredictionOffset, Increment = 1,
+    Suffix = " studs",
+    Callback = function(value) Config.Aim.MaxPredictionOffset = value end,
 })
 
-TriggerTab:AddSection("Trigger Bot", "Lucide:zap")
+local TriggerSection = TriggerTab:AddCollapsibleSection({Title = "Trigger Bot", Icon = "Lucide:zap"})
 
-TriggerTab:AddParagraph({
+TriggerSection:AddParagraph({
     Title = "Trigger Bot",
     Icon = "Lucide:info",
-    Text = "Automatically fires when your crosshair passes over an enemy. Uses the game's native weapon fire path. Wall Check controls whether the enemy must be visible or can be shot through walls.",
+    Text = "Automatically fires when your crosshair passes over an enemy.",
 })
 
-UIControls.TriggerBotEnabled = TriggerTab:AddToggle({
+UIControls.TriggerBotEnabled = TriggerSection:AddToggle({
     Text = "Enable Trigger Bot",
+    Flag = "TriggerBotEnabled",
     Default = Config.TriggerBot.Enabled,
     Callback = function(value)
         Config.TriggerBot.Enabled = value
@@ -1978,54 +2057,52 @@ UIControls.TriggerBotEnabled = TriggerTab:AddToggle({
     end,
 })
 
-UIControls.TriggerBotWallCheck = TriggerTab:AddToggle({
+UIControls.TriggerBotWallCheck = TriggerSection:AddToggle({
     Text = "Wall Check",
-    Description = "Only fire if the enemy is visible (respects walls / smoke / flash)",
+    Flag = "TriggerBotWallCheck",
     Default = Config.TriggerBot.WallCheck,
     Callback = function(value) Config.TriggerBot.WallCheck = value end,
 })
 
-UIControls.TriggerBotRadius = TriggerTab:AddSlider({
-    Text = "Trigger Radius", Min = 1, Max = 50, Default = Config.TriggerBot.Radius, Increment = 1,
-    Suffix = " px", Callback = function(value) Config.TriggerBot.Radius = value end,
+UIControls.TriggerBotRadius = TriggerSection:AddSlider({
+    Text = "Trigger Radius",
+    Flag = "TriggerBotRadius",
+    Min = 1, Max = 50, Default = Config.TriggerBot.Radius, Increment = 1,
+    Suffix = " px",
+    Callback = function(value) Config.TriggerBot.Radius = value end,
 })
 
-UIControls.TriggerBotDelay = TriggerTab:AddSlider({
-    Text = "Trigger Delay", Min = 0, Max = 0.50, Default = Config.TriggerBot.Delay, Increment = 0.01,
-    Suffix = " s", Callback = function(value) Config.TriggerBot.Delay = value end,
+UIControls.TriggerBotDelay = TriggerSection:AddSlider({
+    Text = "Trigger Delay",
+    Flag = "TriggerBotDelay",
+    Min = 0, Max = 0.50, Default = Config.TriggerBot.Delay, Increment = 0.01,
+    Suffix = " s",
+    Callback = function(value) Config.TriggerBot.Delay = value end,
 })
 
-TriggerTab:AddDivider()
-TriggerTab:AddSection("Hold Key", "Lucide:keyboard")
+local TriggerHoldSection = TriggerTab:AddCollapsibleSection({Title = "Hold Key", Icon = "Lucide:keyboard"})
 
-TriggerTab:AddToggle({
+TriggerHoldSection:AddToggle({
     Text = "Enable Hold Key",
-    Description = "Only fire while holding a specific key",
+    Flag = "TriggerHoldEnabled",
     Default = Config.TriggerBot.HoldKeyEnabled,
     Callback = function(value) Config.TriggerBot.HoldKeyEnabled = value end,
 })
 
-TriggerTab:AddKeybind({
+TriggerHoldSection:AddKeybind({
     Text = "Trigger Hold Key",
-    Description = "Key you must hold for the trigger bot to fire",
+    Flag = "TriggerHoldKey",
     Default = Config.TriggerBot.HoldKey,
     Callback = function(key, kind)
         if key then Config.TriggerBot.HoldKey = key end
     end,
 })
 
-TriggerTab:AddLabel("Wall Check ON: respects walls, smoke, and flash. Wall Check OFF: fires through walls.")
+local KeybindAimSection = KeybindsTab:AddCollapsibleSection({Title = "Auto Aim Keybind", Icon = "Lucide:crosshair"})
 
-KeybindsTab:AddSection("Auto Aim Keybind", "Lucide:crosshair")
-
-KeybindsTab:AddParagraph({
-    Title = "Custom Aim Keybind",
-    Icon = "Lucide:info",
-    Text = "Enable this to use a custom key instead of Hold RMB for Auto Aim. When enabled, RMB is ignored and the assigned key activates aiming.",
-})
-
-KeybindsTab:AddToggle({
+KeybindAimSection:AddToggle({
     Text = "Enable Custom Aim Keybind",
+    Flag = "AimKeybindEnabled",
     Default = Config.Aim.AimKeybindEnabled,
     Callback = function(value)
         Config.Aim.AimKeybindEnabled = value
@@ -2035,26 +2112,20 @@ KeybindsTab:AddToggle({
     end,
 })
 
-KeybindsTab:AddKeybind({
+KeybindAimSection:AddKeybind({
     Text = "Aim Key",
-    Description = "Hold this key to activate Auto Aim",
+    Flag = "AimKeybind",
     Default = Config.Aim.AimKeybind,
     Callback = function(key, kind)
         if key then Config.Aim.AimKeybind = key end
     end,
 })
 
-KeybindsTab:AddDivider()
-KeybindsTab:AddSection("Auto Shoot Keybind", "Lucide:target")
+local KeybindShootSection = KeybindsTab:AddCollapsibleSection({Title = "Auto Shoot Keybind", Icon = "Lucide:target"})
 
-KeybindsTab:AddParagraph({
-    Title = "Custom Auto Shoot Keybind",
-    Icon = "Lucide:info",
-    Text = "Enable this to use a custom key instead of RMB / LMB for Auto Shoot. When enabled, the mouse buttons are ignored and the assigned key activates Auto Shoot.",
-})
-
-KeybindsTab:AddToggle({
+KeybindShootSection:AddToggle({
     Text = "Enable Custom Auto Shoot Keybind",
+    Flag = "AutoShootKeybindEnabled",
     Default = Config.Aim.AutoShootKeybindEnabled,
     Callback = function(value)
         Config.Aim.AutoShootKeybindEnabled = value
@@ -2062,31 +2133,31 @@ KeybindsTab:AddToggle({
     end,
 })
 
-KeybindsTab:AddKeybind({
+KeybindShootSection:AddKeybind({
     Text = "Auto Shoot Key",
-    Description = "Hold this key to activate Auto Shoot",
+    Flag = "AutoShootKeybind",
     Default = Config.Aim.AutoShootKeybind,
     Callback = function(key, kind)
         if key then Config.Aim.AutoShootKeybind = key end
     end,
 })
 
-KeybindsTab:AddDivider()
-KeybindsTab:AddSection("Menu", "Lucide:keyboard")
+local MenuKeySection = KeybindsTab:AddCollapsibleSection({Title = "Menu", Icon = "Lucide:keyboard"})
 
-KeybindsTab:AddKeybind({
+MenuKeySection:AddKeybind({
     Text = "Toggle Menu",
-    Description = "Open / close the panel",
+    Flag = "MenuToggleKey",
     Default = TOGGLE_KEY,
     Callback = function(key, kind)
         if kind == "press" then Window:Toggle() end
     end,
 })
 
-VisualTab:AddSection("ESP", "Lucide:eye")
+local ESPMainSection = VisualTab:AddCollapsibleSection({Title = "ESP", Icon = "Lucide:eye"})
 
-UIControls.ESPEnabled = VisualTab:AddToggle({
+UIControls.ESPEnabled = ESPMainSection:AddToggle({
     Text = "Enable ESP",
+    Flag = "ESPEnabled",
     Default = Config.ESP.Enabled,
     Callback = function(value)
         Config.ESP.Enabled = value
@@ -2096,36 +2167,36 @@ UIControls.ESPEnabled = VisualTab:AddToggle({
     end,
 })
 
-UIControls.Boxes = VisualTab:AddToggle({
-    Text = "Boxes", Default = Config.ESP.Boxes,
+UIControls.Boxes = ESPMainSection:AddToggle({
+    Text = "Boxes", Flag = "ESPBoxes", Default = Config.ESP.Boxes,
     Callback = function(value) Config.ESP.Boxes = value end,
 })
 
-UIControls.Names = VisualTab:AddToggle({
-    Text = "Names", Default = Config.ESP.Names,
+UIControls.Names = ESPMainSection:AddToggle({
+    Text = "Names", Flag = "ESPNnames", Default = Config.ESP.Names,
     Callback = function(value) Config.ESP.Names = value end,
 })
 
-UIControls.Health = VisualTab:AddToggle({
-    Text = "Health", Default = Config.ESP.Health,
+UIControls.Health = ESPMainSection:AddToggle({
+    Text = "Health", Flag = "ESPHealth", Default = Config.ESP.Health,
     Callback = function(value) Config.ESP.Health = value end,
 })
 
-UIControls.Distance = VisualTab:AddToggle({
-    Text = "Distance", Default = Config.ESP.Distance,
+UIControls.Distance = ESPMainSection:AddToggle({
+    Text = "Distance", Flag = "ESPDistance", Default = Config.ESP.Distance,
     Callback = function(value) Config.ESP.Distance = value end,
 })
 
-UIControls.Chams = VisualTab:AddToggle({
-    Text = "Chams", Default = Config.ESP.Chams,
+UIControls.Chams = ESPMainSection:AddToggle({
+    Text = "Chams", Flag = "ESPChams", Default = Config.ESP.Chams,
     Callback = function(value) Config.ESP.Chams = value end,
 })
 
-VisualTab:AddDivider()
-VisualTab:AddSection("ESP Colors", "Lucide:palette")
+local ESPColorSection = VisualTab:AddCollapsibleSection({Title = "ESP Colors", Icon = "Lucide:palette"})
 
-VisualTab:AddDropdown({
+ESPColorSection:AddDropdown({
     Text = "ESP Color Mode",
+    Flag = "ESPColorMode",
     Options = {"Custom", "Rainbow"},
     Default = ESPColorState.mode,
     Callback = function(option)
@@ -2134,8 +2205,9 @@ VisualTab:AddDropdown({
     end,
 })
 
-VisualTab:AddColorPicker({
+ESPColorSection:AddColorPicker({
     Text = "ESP Custom Color",
+    Flag = "ESPCustomColor",
     Default = ESPColorState.custom,
     Callback = function(color)
         ESPColorState.custom = color
@@ -2143,13 +2215,221 @@ VisualTab:AddColorPicker({
     end,
 })
 
-VisualTab:AddDivider()
-VisualTab:AddSection("ESP Range", "Lucide:maximize")
+local ESPRangeSection = VisualTab:AddCollapsibleSection({Title = "ESP Range", Icon = "Lucide:maximize"})
 
-UIControls.ESPDistance = VisualTab:AddSlider({
-    Text = "ESP Max Distance", Min = 100, Max = 3000, Default = Config.ESP.MaxDistance, Increment = 50,
-    Suffix = " studs", Callback = function(value) Config.ESP.MaxDistance = value end,
+UIControls.ESPDistance = ESPRangeSection:AddSlider({
+    Text = "ESP Max Distance",
+    Flag = "ESPMaxDistance",
+    Min = 100, Max = 3000, Default = Config.ESP.MaxDistance, Increment = 50,
+    Suffix = " studs",
+    Callback = function(value) Config.ESP.MaxDistance = value end,
 })
+
+getgenv()._jumpEnabled = false
+getgenv()._jumpValue = 90
+
+MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddToggle({
+    Text = "Enable Jump Hack",
+    Flag = "JumpEnabled",
+    Default = false,
+    Callback = function(value) getgenv()._jumpEnabled = value end,
+})
+
+MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddSlider({
+    Text = "Jump Power",
+    Flag = "JumpValue",
+    Min = 50, Max = 200, Default = 90, Increment = 5,
+    Callback = function(value) getgenv()._jumpValue = value end,
+})
+
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if getgenv()._jumpEnabled then
+        hum.JumpPower = getgenv()._jumpValue
+        hum.UseJumpPower = true
+    else
+        hum.JumpPower = 50
+    end
+end)
+
+local ServerTab = ToolsGroup:AddTab({Name = "Server", Icon = "Lucide:server"})
+
+ServerTab:AddButton({
+    Text = "Rejoin Server",
+    Icon = "Lucide:refresh-cw",
+    Callback = function()
+        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+    end,
+})
+
+ServerTab:AddButton({
+    Text = "Server Hop",
+    Icon = "Lucide:shuffle",
+    Callback = function()
+        local Http = game:GetService("HttpService")
+        local ok, servers = pcall(function()
+            return Http:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"))
+        end)
+        if ok and servers and servers.data then
+            for _, s in ipairs(servers.data) do
+                if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                    return
+                end
+            end
+        end
+        VindUI:Notify({Title = "Server Hop", Text = "No server found", Type = "warning", Duration = 2})
+    end,
+})
+
+local ConfigTab = ToolsGroup:AddTab({ Name = "Config", Icon = "Lucide:settings-2" })
+
+local RS_Config = game:GetService("ReplicatedStorage")
+
+local ok, GameConfig = pcall(function()
+    return require(RS_Config.Config.Config)
+end)
+
+if not ok or type(GameConfig) ~= "table" then
+    ConfigTab:AddParagraph({
+        Title = "Config Unavailable",
+        Text = "Could not load ReplicatedStorage.Config.Config.",
+    })
+else
+    local function makeSection(name, icon)
+        return ConfigTab:AddCollapsibleSection({Title = name, Icon = icon})
+    end
+
+    getgenv()._cfgValues = getgenv()._cfgValues or {}
+    getgenv()._cfgOriginal = getgenv()._cfgOriginal or {}
+    getgenv()._cfgEnabled = getgenv()._cfgEnabled or {}
+
+    local function saveOriginal(section, key, value)
+        if not getgenv()._cfgOriginal[section] then getgenv()._cfgOriginal[section] = {} end
+        if getgenv()._cfgOriginal[section][key] == nil then
+            getgenv()._cfgOriginal[section][key] = value
+        end
+    end
+
+    local function applyValue(section, key, value)
+        if GameConfig[section] and GameConfig[section][key] ~= nil then
+            GameConfig[section][key] = value
+            getgenv()._cfgValues[section .. "." .. key] = value
+        end
+    end
+
+    local function restoreValue(section, key)
+        if GameConfig[section] and getgenv()._cfgOriginal[section] and getgenv()._cfgOriginal[section][key] ~= nil then
+            GameConfig[section][key] = getgenv()._cfgOriginal[section][key]
+        end
+    end
+
+    local function restoreAll()
+        for section, keys in pairs(getgenv()._cfgOriginal) do
+            for key, value in pairs(keys) do
+                if GameConfig[section] then
+                    GameConfig[section][key] = value
+                end
+            end
+        end
+        getgenv()._cfgEnabled = {}
+    end
+
+    local function addCfgToggle(section, key, label, icon, defaultValue)
+        local sectionObj = makeSection(section .. " · " .. label, icon or "Lucide:settings")
+
+        sectionObj:AddToggle({
+            Text = "Enable " .. label,
+            Flag = "CfgTgl_" .. section .. "_" .. key,
+            Default = false,
+            Callback = function(value)
+                getgenv()._cfgEnabled[section .. "." .. key] = value
+                if value then
+                    saveOriginal(section, key, GameConfig[section][key])
+                    applyValue(section, key, getgenv()._cfgValues[section .. "." .. key] or defaultValue)
+                    VindUI:Notify({Title = "Config", Text = label .. " ON", Type = "success", Duration = 1.5})
+                else
+                    restoreValue(section, key)
+                    VindUI:Notify({Title = "Config", Text = label .. " OFF", Type = "warning", Duration = 1.5})
+                end
+            end,
+        })
+
+        sectionObj:AddSlider({
+            Text = label .. " Value",
+            Flag = "CfgVal_" .. section .. "_" .. key,
+            Min = -100000, Max = 100000, Default = defaultValue, Increment = 1,
+            Callback = function(v)
+                getgenv()._cfgValues[section .. "." .. key] = v
+                if getgenv()._cfgEnabled[section .. "." .. key] then
+                    applyValue(section, key, v)
+                end
+            end,
+        })
+    end
+
+    if GameConfig.Team then
+        addCfgToggle("Team", "MaxSize", "Max Team Size", "Lucide:users", tonumber(GameConfig.Team.MaxSize) or 10)
+    end
+
+    if GameConfig.Game then
+        addCfgToggle("Game", "EndTime", "End Time", "Lucide:clock", tonumber(GameConfig.Game.EndTime) or 60)
+        addCfgToggle("Game", "VoteTime", "Vote Time", "Lucide:vote", tonumber(GameConfig.Game.VoteTime) or 15)
+        addCfgToggle("Game", "ShowMapTime", "Show Map Time", "Lucide:map", tonumber(GameConfig.Game.ShowMapTime) or 5)
+        addCfgToggle("Game", "AreaWarningTime", "Area Warning Time", "Lucide:alert-triangle", tonumber(GameConfig.Game.AreaWarningTime) or 5)
+    end
+
+    if GameConfig.GameStarter then
+        addCfgToggle("GameStarter", "StartTime", "Start Time", "Lucide:play", tonumber(GameConfig.GameStarter.StartTime) or 5)
+    end
+
+    if GameConfig.Movement then
+        addCfgToggle("Movement", "SprintSpeed", "Sprint Speed", "Lucide:gauge", tonumber(GameConfig.Movement.SprintSpeed) or 16)
+        addCfgToggle("Movement", "SlideSpeed", "Slide Speed", "Lucide:wind", tonumber(GameConfig.Movement.SlideSpeed) or 16)
+        addCfgToggle("Movement", "SlideTime", "Slide Time", "Lucide:timer", tonumber(GameConfig.Movement.SlideTime) or 1)
+        addCfgToggle("Movement", "SlideHeight", "Slide Height", "Lucide:arrow-up", tonumber(GameConfig.Movement.SlideHeight) or 1)
+        addCfgToggle("Movement", "SlideInterval", "Slide Interval", "Lucide:repeat", tonumber(GameConfig.Movement.SlideInterval) or 0.5)
+        addCfgToggle("Movement", "SlideForceTime", "Slide Force Time", "Lucide:zap", tonumber(GameConfig.Movement.SlideForceTime) or 0.5)
+        addCfgToggle("Movement", "JumpInterval", "Jump Interval", "Lucide:arrow-up-circle", tonumber(GameConfig.Movement.JumpInterval) or 0.5)
+        addCfgToggle("Movement", "CrouchSpeed", "Crouch Speed", "Lucide:arrow-down", tonumber(GameConfig.Movement.CrouchSpeed) or 8)
+        addCfgToggle("Movement", "SneakSpeed", "Sneak Speed", "Lucide:footprints", tonumber(GameConfig.Movement.SneakSpeed) or 8)
+    end
+
+    if GameConfig.Combat then
+        addCfgToggle("Combat", "BulletSpeed", "Bullet Speed", "Lucide:zap", tonumber(GameConfig.Combat.BulletSpeed) or 1000)
+        addCfgToggle("Combat", "BulletMaxDistance", "Bullet Max Distance", "Lucide:target", tonumber(GameConfig.Combat.BulletMaxDistance) or 1000)
+        addCfgToggle("Combat", "ThrowPower", "Throw Power", "Lucide:hand", tonumber(GameConfig.Combat.ThrowPower) or 100)
+        addCfgToggle("Combat", "HeadshotDamage", "Headshot Damage", "Lucide:skull", tonumber(GameConfig.Combat.HeadshotDamage) or 100)
+        addCfgToggle("Combat", "AimWalkSpeed", "Aim Walk Speed", "Lucide:crosshair", tonumber(GameConfig.Combat.AimWalkSpeed) or 0)
+        addCfgToggle("Combat", "KillTimeout", "Kill Timeout", "Lucide:hourglass", tonumber(GameConfig.Combat.KillTimeout) or 1)
+    end
+
+    if GameConfig.VIP then
+        addCfgToggle("VIP", "GameExp", "VIP Game EXP", "Lucide:crown", tonumber(GameConfig.VIP.GameExp) or 1)
+        addCfgToggle("VIP", "NonGameCoin", "VIP Non Game Coin", "Lucide:coins", tonumber(GameConfig.VIP.NonGameCoin) or 1)
+        addCfgToggle("VIP", "WeaponSellExtraRate", "VIP Weapon Sell Extra", "Lucide:dollar-sign", tonumber(GameConfig.VIP.WeaponSellExtraRate) or 1)
+    end
+
+    if GameConfig.Premium then
+        addCfgToggle("Premium", "GameExp", "Premium Game EXP", "Lucide:gem", tonumber(GameConfig.Premium.GameExp) or 1)
+        addCfgToggle("Premium", "GameCoin", "Premium Game Coin", "Lucide:coins", tonumber(GameConfig.Premium.GameCoin) or 1)
+    end
+
+    ConfigTab:AddDivider()
+
+    ConfigTab:AddButton({
+        Text = "Reset All Configs",
+        Icon = "Lucide:rotate-ccw",
+        Callback = function()
+            restoreAll()
+            VindUI:Notify({Title = "Config", Text = "All configs restored to original", Type = "success", Duration = 2})
+        end,
+    })
+
+    ConfigTab:AddLabel("Each toggle enables/disables its value. Sliders save the value to use when the toggle is ON.")
+end
 
 local function updateAimModeLabels()
     local text = "Current mode • " .. tostring(Config.AimMode or "Custom")
@@ -2170,18 +2450,11 @@ local function applyAimPreset(name, values, notification)
     VindUI:Notify({Title = name, Text = notification or (name .. " applied"), Type = "success", Duration = 2.2})
 end
 
-LegitTab:AddSection("Legit Aim", "Lucide:user-check")
-LegitModeLabel = LegitTab:AddLabel("Current mode • " .. tostring(Config.AimMode))
+local LegitSection = LegitTab:AddCollapsibleSection({Title = "Legit Aim", Icon = "Lucide:user-check"})
+LegitModeLabel = LegitSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
 
-LegitTab:AddParagraph({
-    Title = "Legit Mode",
-    Icon = "Lucide:info",
-    Text = "Smooth visible-target aiming designed to look less abrupt. Legit presets keep wall checks, game visibility, smoke and flash handling enabled.",
-})
-
-LegitTab:AddButton({
+LegitSection:AddButton({
     Text = "Legit • Subtle",
-    Description = "Hold RMB • 80px FOV • smooth • visibility-safe",
     Icon = "Lucide:feather",
     Callback = function()
         applyAimPreset("Legit • Subtle", {
@@ -2198,9 +2471,8 @@ LegitTab:AddButton({
     end,
 })
 
-LegitTab:AddButton({
+LegitSection:AddButton({
     Text = "Legit • Balanced",
-    Description = "Hold RMB • 120px FOV • fast balanced response",
     Icon = "Lucide:scale",
     Callback = function()
         applyAimPreset("Legit • Balanced", {
@@ -2217,9 +2489,8 @@ LegitTab:AddButton({
     end,
 })
 
-LegitTab:AddButton({
+LegitSection:AddButton({
     Text = "Legit • Strong",
-    Description = "Hold RMB • 180px FOV • very fast response",
     Icon = "Lucide:zap",
     Callback = function()
         applyAimPreset("Legit • Strong", {
@@ -2236,47 +2507,11 @@ LegitTab:AddButton({
     end,
 })
 
-LegitTab:AddDivider()
-LegitTab:AddSection("Legit Helpers", "Lucide:wrench")
+local RageSection = RageTab:AddCollapsibleSection({Title = "Rage Aim", Icon = "Lucide:flame"})
+RageModeLabel = RageSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
 
-LegitTab:AddButton({
-    Text = "Force Visible Targets Only", Icon = "Lucide:eye",
-    Callback = function()
-        Config.AimMode = "Legit • Custom"
-        Config.Aim.VisibleCheck = true
-        Config.Aim.RespectGameVisibility = true
-        Config.Aim.RespectSmoke = true
-        Config.Aim.RespectFlash = true
-        lockedTarget = nil
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
-    end,
-})
-
-LegitTab:AddButton({
-    Text = "Use Hold RMB", Icon = "Lucide:mouse-pointer",
-    Callback = function()
-        Config.AimMode = "Legit • Custom"
-        Config.Aim.HoldRMB = true
-        Config.Aim.AimKeybindEnabled = false
-        lockedTarget = nil
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
-    end,
-})
-
-RageTab:AddSection("Rage Aim", "Lucide:flame")
-RageModeLabel = RageTab:AddLabel("Current mode • " .. tostring(Config.AimMode))
-
-RageTab:AddParagraph({
-    Title = "Rage Mode",
-    Icon = "Lucide:alert-triangle",
-    Text = "Aggressive target snapping with Always On support, larger FOV and maximum response. Max Rage can acquire targets even when normal wall/effect filters are disabled.",
-})
-
-RageTab:AddButton({
+RageSection:AddButton({
     Text = "Rage • Visible",
-    Description = "Always On • 500px FOV • very fast • visible targets only",
     Icon = "Lucide:eye",
     Callback = function()
         applyAimPreset("Rage • Visible", {
@@ -2293,9 +2528,8 @@ RageTab:AddButton({
     end,
 })
 
-RageTab:AddButton({
+RageSection:AddButton({
     Text = "Rage • Max",
-    Description = "Always On • max FOV • instant-class response",
     Icon = "Lucide:flame",
     Callback = function()
         applyAimPreset("Rage • Max", {
@@ -2309,77 +2543,6 @@ RageTab:AddButton({
             StickyMultiplier = 1.60, ShowFOV = true,
             AimKeybindEnabled = false, AutoShootKeybindEnabled = false,
         })
-    end,
-})
-
-RageTab:AddDivider()
-RageTab:AddSection("Rage Helpers", "Lucide:wrench")
-
-RageTab:AddButton({
-    Text = "Always On", Icon = "Lucide:power",
-    Callback = function()
-        Config.AimMode = "Rage • Custom"
-        Config.Aim.Enabled = true
-        Config.Aim.HoldRMB = false
-        Config.Aim.AimKeybindEnabled = false
-        lockedTarget = nil
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
-    end,
-})
-
-RageTab:AddButton({
-    Text = "Ignore Walls / Visibility", Icon = "Lucide:eye-off",
-    Callback = function()
-        Config.AimMode = "Rage • Custom"
-        Config.Aim.VisibleCheck = false
-        Config.Aim.RespectGameVisibility = false
-        lockedTarget = nil
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
-    end,
-})
-
-RageTab:AddButton({
-    Text = "Ignore Smoke / Flash", Icon = "Lucide:wind",
-    Callback = function()
-        Config.AimMode = "Rage • Custom"
-        Config.Aim.RespectSmoke = false
-        Config.Aim.RespectFlash = false
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
-    end,
-})
-
-RageTab:AddButton({
-    Text = "Max Prediction / Closest Part", Icon = "Lucide:move-3d",
-    Callback = function()
-        Config.AimMode = "Rage • Custom"
-        Config.Aim.AimPoint = "Closest Part"
-        Config.Aim.Prediction = true
-        Config.Aim.PredictionTime = 0.10
-        Config.Aim.PredictionSmoothing = 0.55
-        Config.Aim.MaxPredictionOffset = 18
-        Config.Aim.TargetPriority = "Crosshair"
-        Config.Aim.MicroSnapRadius = 8
-        Config.Aim.SwitchDelay = 0
-        Config.Aim.SwitchThreshold = 0.03
-        Config.Aim.LockGrace = 0.12
-        lockedTarget = nil
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
-    end,
-})
-
-RageTab:AddButton({
-    Text = "Max FOV / Aim Speed", Icon = "Lucide:maximize-2",
-    Callback = function()
-        Config.AimMode = "Rage • Custom"
-        Config.Aim.FOV = 600
-        Config.Aim.SmoothSpeed = 120
-        Config.Aim.MaxDistance = 700
-        if syncUIFromConfig then syncUIFromConfig() end
-        updateAimModeLabels()
     end,
 })
 
@@ -2435,12 +2598,15 @@ syncUIFromConfig = function()
     updateAimModeLabels()
 end
 
-ConfigsTab:AddSection("Profiles", "Lucide:user")
-ConfigStore.StatusLabel = ConfigsTab:AddLabel(ConfigStore.Available and ("Ready • " .. ConfigStore.Selected) or "Unavailable • filesystem APIs missing")
+local ConfigProfileSection = ConfigsTab:AddCollapsibleSection({Title = "Profiles", Icon = "Lucide:user"})
+ConfigStore.StatusLabel = ConfigProfileSection:AddLabel(ConfigStore.Available and ("Ready • " .. ConfigStore.Selected) or "Unavailable • filesystem APIs missing")
 
 if ConfigStore.Available then
-    ConfigStore.ProfileDropdown = ConfigsTab:AddDropdown({
-        Text = "Config Profile", Options = listConfigProfiles(), Default = ConfigStore.Selected,
+    ConfigStore.ProfileDropdown = ConfigProfileSection:AddDropdown({
+        Text = "Config Profile",
+        Flag = "ConfigProfile",
+        Options = listConfigProfiles(),
+        Default = ConfigStore.Selected,
         Callback = function(option)
             local value = type(option) == "table" and option[1] or option
             if value ~= nil then
@@ -2452,11 +2618,14 @@ if ConfigStore.Available then
             end
         end,
     })
-    ConfigStore.ProfileInput = ConfigsTab:AddTextbox({
-        Text = "Profile Name", Default = ConfigStore.Selected, Placeholder = "default",
+    ConfigStore.ProfileInput = ConfigProfileSection:AddTextbox({
+        Text = "Profile Name",
+        Flag = "ConfigProfileName",
+        Default = ConfigStore.Selected,
+        Placeholder = "default",
         Callback = function(value) ConfigStore.PendingProfile = sanitizeConfigName(value, ConfigStore.Selected) end,
     })
-    ConfigsTab:AddButton({
+    ConfigProfileSection:AddButton({
         Text = "Save / Create Profile", Icon = "Lucide:save",
         Callback = function()
             local profile = ConfigStore.PendingProfile or ConfigStore.Selected
@@ -2467,11 +2636,11 @@ if ConfigStore.Available then
             end
         end,
     })
-    ConfigsTab:AddButton({
+    ConfigProfileSection:AddButton({
         Text = "Load Selected Profile", Icon = "Lucide:upload",
         Callback = function() if loadConfig(ConfigStore.Selected, true) then syncUIFromConfig() end end,
     })
-    ConfigsTab:AddButton({
+    ConfigProfileSection:AddButton({
         Text = "Refresh Profiles", Icon = "Lucide:refresh-cw",
         Callback = function()
             ConfigStore.ProfileDropdown:Refresh(listConfigProfiles())
@@ -2479,7 +2648,7 @@ if ConfigStore.Available then
             setConfigStatus("Profiles refreshed")
         end,
     })
-    ConfigsTab:AddButton({
+    ConfigProfileSection:AddButton({
         Text = "Delete Selected Profile", Icon = "Lucide:trash-2",
         Callback = function()
             local deleted = ConfigStore.Selected
@@ -2491,10 +2660,9 @@ if ConfigStore.Available then
             end
         end,
     })
-    ConfigsTab:AddDivider()
-    ConfigsTab:AddSection("Automation", "Lucide:cog")
-    ConfigsTab:AddToggle({
-        Text = "Auto Save", Default = ConfigStore.AutoSave,
+    ConfigProfileSection:AddDivider()
+    ConfigProfileSection:AddToggle({
+        Text = "Auto Save", Flag = "ConfigAutoSave", Default = ConfigStore.AutoSave,
         Callback = function(value)
             ConfigStore.AutoSave = value == true
             saveMeta()
@@ -2502,26 +2670,25 @@ if ConfigStore.Available then
             setConfigStatus(ConfigStore.AutoSave and ("Auto Save ON • " .. ConfigStore.Selected) or "Auto Save OFF")
         end,
     })
-    ConfigsTab:AddToggle({
-        Text = "Auto Load", Default = ConfigStore.AutoLoad,
+    ConfigProfileSection:AddToggle({
+        Text = "Auto Load", Flag = "ConfigAutoLoad", Default = ConfigStore.AutoLoad,
         Callback = function(value)
             ConfigStore.AutoLoad = value == true
             saveMeta()
             setConfigStatus(ConfigStore.AutoLoad and ("Auto Load ON • " .. ConfigStore.Selected) or "Auto Load OFF")
         end,
     })
-    ConfigsTab:AddLabel("Auto Save and Auto Load default to ON.")
 else
-    ConfigsTab:AddParagraph({
+    ConfigProfileSection:AddParagraph({
         Title = "Persistent Configs Unavailable",
         Icon = "Lucide:alert-triangle",
-        Text = "Your executor needs writefile, readfile, isfile and makefolder. AutoAim/ESP still works normally without saved configs.",
+        Text = "Your executor needs writefile, readfile, isfile and makefolder.",
     })
 end
 
-SettingsTab:AddSection("Sniper Arena", "Lucide:settings")
+local SettingsAimSection = SettingsTab:AddCollapsibleSection({Title = "Reset Aim", Icon = "Lucide:rotate-ccw"})
 
-SettingsTab:AddButton({
+SettingsAimSection:AddButton({
     Text = "Reset Aim Settings", Icon = "Lucide:rotate-ccw",
     Callback = function()
         Config.AimMode = "Custom"
@@ -2561,7 +2728,9 @@ SettingsTab:AddButton({
     end,
 })
 
-SettingsTab:AddButton({
+local SettingsTriggerSection = SettingsTab:AddCollapsibleSection({Title = "Reset Trigger Bot", Icon = "Lucide:rotate-ccw"})
+
+SettingsTriggerSection:AddButton({
     Text = "Reset Trigger Bot Settings", Icon = "Lucide:rotate-ccw",
     Callback = function()
         Config.TriggerBot.Enabled = false
@@ -2574,7 +2743,9 @@ SettingsTab:AddButton({
     end,
 })
 
-SettingsTab:AddButton({
+local SettingsESPSection = SettingsTab:AddCollapsibleSection({Title = "Reset ESP", Icon = "Lucide:rotate-ccw"})
+
+SettingsESPSection:AddButton({
     Text = "Reset ESP Settings", Icon = "Lucide:rotate-ccw",
     Callback = function()
         Config.ESP.Enabled = true
@@ -2589,13 +2760,11 @@ SettingsTab:AddButton({
     end,
 })
 
-SettingsTab:AddDivider()
-SettingsTab:AddSection("Menu", "Lucide:keyboard")
+local SettingsMenuSection = SettingsTab:AddCollapsibleSection({Title = "Menu", Icon = "Lucide:keyboard"})
 
-SettingsTab:AddKeybind({
+SettingsMenuSection:AddKeybind({
     Text = "Toggle Menu",
-    Description = "Open / close the panel",
-    Icon = "Lucide:keyboard",
+    Flag = "SettingsMenuKey",
     Default = TOGGLE_KEY,
     Callback = function(key, kind)
         if kind == "press" then Window:Toggle() end
@@ -2604,39 +2773,38 @@ SettingsTab:AddKeybind({
 
 local cleanup
 
-SettingsTab:AddButton({
+SettingsMenuSection:AddButton({
     Text = "Unload Scared Ware UI",
-    Description = "Tears down the whole interface",
     Icon = "Lucide:power",
     Callback = function() if cleanup then cleanup() end end,
 })
 
-HomeTab:AddSubTab({ Name = "Details And Info", Icon = "Lucide:layout-grid" }):AddSystemInfoGrid({ Description = "Live session info" })
+local HomeDetailsSub = HomeTab:AddSubTab({ Name = "Details", Icon = "Lucide:layout-grid" })
+HomeDetailsSub:AddSystemInfoGrid({ Description = "Live session info" })
 
-local ChangelogSub = HomeTab:AddSubTab({ Name = "Changelog", Icon = "Lucide:file-text" })
+local HomeChangelogSub = HomeTab:AddSubTab({ Name = "Changelog", Icon = "Lucide:file-text" })
 
-ChangelogSub:AddChangelogEntry({
-    Version = "Scared Ware UI v0.1",
+HomeChangelogSub:AddChangelogEntry({
+    Version = "Scared Ware UI v0.2",
     Date    = "Release",
     Changes = {
-        { Type = "Added",   Text = "Initial Sniper Arena release" },
+        { Type = "Added",   Text = "Migrated to Vind UI Reborn v2.9.0-modular" },
         { Type = "Added",   Text = "Auto Aim with full targeting system" },
         { Type = "Added",   Text = "Auto Shoot with RMB / LMB activation" },
         { Type = "Added",   Text = "ESP (Boxes / Names / Health / Distance / Chams)" },
         { Type = "Added",   Text = "ESP Custom / Rainbow color modes" },
         { Type = "Added",   Text = "FOV Custom / Rainbow color modes" },
+        { Type = "Added",   Text = "Trigger Bot with Wall Check toggle" },
+        { Type = "Added",   Text = "Aim Keybind custom + Auto Shoot Keybind custom" },
+        { Type = "Added",   Text = "Hold Key option for Trigger Bot" },
         { Type = "Added",   Text = "Legit presets (Subtle / Balanced / Strong)" },
         { Type = "Added",   Text = "Rage presets (Visible / Max)" },
-        { Type = "Added",   Text = "Configs system (Save / Load / Delete)" },
+        { Type = "Added",   Text = "Configs system (Save / Load / Delete / AutoSave)" },
+        { Type = "Added",   Text = "Theme Picker (Dark / Light / Midnight / Forest)" },
+        { Type = "Added",   Text = "Startup intro animation" },
+        { Type = "Added",   Text = "Collapsible sections and tab groups" },
         { Type = "Added",   Text = "Universe-wide Sniper Arena support" },
         { Type = "Added",   Text = "Menu keybind: Right Alt" },
-        { Type = "Added",   Text = "Aim Keybind (custom key for Auto Aim)" },
-        { Type = "Added",   Text = "Auto Shoot Keybind (custom key for Auto Shoot)" },
-        { Type = "Added",   Text = "Trigger Bot feature" },
-        { Type = "Added",   Text = "Trigger Bot Wall Check toggle (with proper filter for Highlight / _Temp / Ball)" },
-        { Type = "Added",   Text = "Trigger Bot Hold Key option" },
-        { Type = "Added",   Text = "New Keybinds tab" },
-        { Type = "Added",   Text = "New Trigger Bot tab" },
     },
 })
 
@@ -2673,6 +2841,7 @@ cleanup = function()
     for entity, _ in pairs(espObjects) do removeESP(entity) end
     pcall(function() ScreenGui:Destroy() end)
     pcall(function() Window:Destroy() end)
+    pcall(function() VindUI:Unload() end)
     if ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP == cleanup then
         ENV.__SNIPER_ARENA_AIM_ESP_CLEANUP = nil
     end
@@ -2717,3 +2886,5 @@ end)
 
 Window:SelectTab("Combat")
 Window:Open()
+
+print("[Scared Ware UI · Sniper Arena v0.2] Loaded")
