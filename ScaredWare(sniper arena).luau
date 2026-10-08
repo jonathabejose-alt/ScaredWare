@@ -367,7 +367,7 @@ local function saveConfig(name, notify)
     if not ok then setConfigStatus("Save failed: " .. tostring(err)) return false end
     saveMeta()
     ConfigStore.LastFingerprint = configFingerprint()
-    setConfigStatus("Saved • " .. clean)
+    setConfigStatus("Saved " .. clean)
     if notify then VindUI:Notify({Title = "Configs", Text = "Saved " .. clean, Type = "success", Duration = 2}) end
     return true
 end
@@ -376,7 +376,7 @@ local function loadConfig(name, notify)
     if not ConfigStore.Available then setConfigStatus("Unavailable") return false end
     local clean = sanitizeConfigName(name or ConfigStore.Selected, "default")
     local path = configPath(clean)
-    if not FS.IsFile(path) then setConfigStatus("Not found • " .. clean) return false end
+    if not FS.IsFile(path) then setConfigStatus("Not found " .. clean) return false end
     local ok, text = pcall(FS.Read, path)
     if not ok then setConfigStatus("Load failed") return false end
     local data = decodeJSON(text)
@@ -385,7 +385,7 @@ local function loadConfig(name, notify)
     ConfigStore.Selected = clean
     saveMeta()
     ConfigStore.LastFingerprint = configFingerprint()
-    setConfigStatus("Loaded • " .. clean)
+    setConfigStatus("Loaded " .. clean)
     if notify then VindUI:Notify({Title = "Configs", Text = "Loaded " .. clean, Type = "success", Duration = 2}) end
     return true
 end
@@ -416,12 +416,12 @@ local function deleteConfig(name)
     if not ConfigStore.Available or not FS.DeleteFile then setConfigStatus("Delete unavailable") return false end
     local clean = sanitizeConfigName(name or ConfigStore.Selected, "default")
     local path = configPath(clean)
-    if not FS.IsFile(path) then setConfigStatus("Not found • " .. clean) return false end
+    if not FS.IsFile(path) then setConfigStatus("Not found " .. clean) return false end
     local ok = pcall(FS.DeleteFile, path)
     if not ok then setConfigStatus("Delete failed") return false end
     if ConfigStore.Selected == clean then ConfigStore.Selected = "default" end
     saveMeta()
-    setConfigStatus("Deleted • " .. clean)
+    setConfigStatus("Deleted " .. clean)
     return true
 end
 
@@ -474,7 +474,7 @@ end
 local function getRuntimeStatusText()
     local info = getCurrentPlaceInfo()
     local state = combatRuntimeActive() and "COMBAT ACTIVE" or "IDLE"
-    return ("%s • PlaceId %s • %s"):format(info.Name, tostring(game.PlaceId), state)
+    return ("%s | PlaceId %s | %s"):format(info.Name, tostring(game.PlaceId), state)
 end
 
 local function safeRequire(instance)
@@ -579,13 +579,13 @@ local function updateBackendStatus()
     if getgenv().WeaponController then table.insert(loaded, "Weapon") end
     if getgenv().EntityService and getgenv().WorldManager and getgenv().CameraController and getgenv().WeaponController then
         getgenv().backendName = "Native"
-        getgenv().moduleInitState = "READY • native " .. table.concat(loaded, "/")
+        getgenv().moduleInitState = "READY | native " .. table.concat(loaded, "/")
     elseif #loaded > 0 then
         getgenv().backendName = "Hybrid"
-        getgenv().moduleInitState = "READY • hybrid " .. table.concat(loaded, "/") .. " + fallback"
+        getgenv().moduleInitState = "READY | hybrid " .. table.concat(loaded, "/") .. " + fallback"
     else
         getgenv().backendName = "Fallback"
-        getgenv().moduleInitState = "READY • replicated fallback active"
+        getgenv().moduleInitState = "READY | replicated fallback active"
     end
     getgenv().setStatus(getgenv().moduleInitState)
 end
@@ -698,7 +698,7 @@ end
 if not guiParent then guiParent = CoreGui end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ScaredWareSniperArena"
+ScreenGui.Name = "_" .. tostring(math.random(100000000, 999999999))
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -1704,7 +1704,7 @@ local function updateESP()
             if Config.ESP.Health then table.insert(info, ("%d HP"):format(math.max(0, math.floor(health + 0.5)))) end
             if Config.ESP.Distance then table.insert(info, ("%d studs"):format(math.floor(distance + 0.5))) end
             object.Info.Visible = #info > 0
-            object.Info.Text = table.concat(info, "  •  ")
+            object.Info.Text = table.concat(info, "  |  ")
         else
             object.Holder.Visible = false
         end
@@ -1746,7 +1746,7 @@ local TOGGLE_KEY = Enum.KeyCode.RightAlt
 
 local Window = VindUI:CreateWindow({
     Title = "Scared Ware UI",
-    Subtitle = "Sniper Arena · v0.3",
+    Subtitle = "Sniper Arena | v0.3",
     Icon = "Lucide:ghost",
     Size = UDim2.fromOffset(660, 500),
     MinSize = Vector2.new(500, 360),
@@ -1766,18 +1766,28 @@ VindUI:Notify({
     Duration = 4,
 })
 
-getgenv().MainGroup = Window:AddTabGroup({Name = "MAIN"})
-getgenv().ToolsGroup = Window:AddTabGroup({Name = "TOOLS"})
+getgenv().CombatGroup = Window:AddTabGroup({Name = "COMBAT"})
+getgenv().PresetGroup = Window:AddTabGroup({Name = "PRESETS"})
+getgenv().ConfigGroup = Window:AddTabGroup({Name = "CONFIG"})
+getgenv().SystemGroup = Window:AddTabGroup({Name = "SYSTEM"})
 
-getgenv().CombatTab = getgenv().MainGroup:AddTab({ Name = "Combat", Icon = "Lucide:crosshair" })
-getgenv().TriggerTab = getgenv().MainGroup:AddTab({ Name = "Trigger", Icon = "Lucide:zap" })
-getgenv().VisualTab = getgenv().MainGroup:AddTab({ Name = "Visuals", Icon = "Lucide:eye" })
-getgenv().MovementTab = getgenv().MainGroup:AddTab({ Name = "Movement", Icon = "Lucide:move-3d" })
-getgenv().KeybindsTab = getgenv().MainGroup:AddTab({ Name = "Keybinds", Icon = "Lucide:keyboard" })
+getgenv().CombatTab   = getgenv().CombatGroup:AddTab({ Name = "Combat",   Icon = "Lucide:crosshair" })
+getgenv().TriggerTab  = getgenv().CombatGroup:AddTab({ Name = "Trigger",  Icon = "Lucide:zap" })
+getgenv().VisualTab   = getgenv().CombatGroup:AddTab({ Name = "Visuals",  Icon = "Lucide:eye" })
+getgenv().MovementTab = getgenv().CombatGroup:AddTab({ Name = "Movement", Icon = "Lucide:move-3d" })
+getgenv().KeybindsTab = getgenv().CombatGroup:AddTab({ Name = "Keybinds", Icon = "Lucide:keyboard" })
 
-getgenv().LegitTab = getgenv().ToolsGroup:AddTab({ Name = "Legit", Icon = "Lucide:user-check" })
-getgenv().RageTab = getgenv().ToolsGroup:AddTab({ Name = "Rage", Icon = "Lucide:flame" })
-getgenv().ThemesTab = getgenv().ToolsGroup:AddTab({ Name = "Themes", Icon = "Lucide:palette" })
+getgenv().LegitTab  = getgenv().PresetGroup:AddTab({ Name = "Legit",  Icon = "Lucide:user-check" })
+getgenv().RageTab   = getgenv().PresetGroup:AddTab({ Name = "Rage",   Icon = "Lucide:flame" })
+getgenv().ThemesTab = getgenv().PresetGroup:AddTab({ Name = "Themes", Icon = "Lucide:palette" })
+
+getgenv().ConfigsTab  = getgenv().ConfigGroup:AddTab({ Name = "Configs",  Icon = "Lucide:save" })
+getgenv().SettingsTab = getgenv().ConfigGroup:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
+getgenv().ConfigTab   = getgenv().ConfigGroup:AddTab({ Name = "Editor",   Icon = "Lucide:pencil" })
+
+getgenv().HomeTab   = getgenv().SystemGroup:AddTab({ Name = "Home",   Icon = "Lucide:layout-dashboard" })
+getgenv().ServerTab = getgenv().SystemGroup:AddTab({ Name = "Server", Icon = "Lucide:server" })
+
 local ThemeSection = getgenv().ThemesTab:AddCollapsibleSection({Title = "Theme Picker", Icon = "Lucide:palette"})
 
 ThemeSection:AddParagraph({
@@ -1848,11 +1858,6 @@ ThemeSection:AddButton({
         getgenv().applyTheme(random)
     end,
 })
-getgenv().ConfigsTab = getgenv().ToolsGroup:AddTab({ Name = "Configs", Icon = "Lucide:save" })
-getgenv().SettingsTab = getgenv().ToolsGroup:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
-getgenv().HomeTab = getgenv().ToolsGroup:AddTab({ Name = "Home", Icon = "Lucide:layout-dashboard" })
-getgenv().ServerTab = getgenv().ToolsGroup:AddTab({ Name = "Server", Icon = "Lucide:server" })
-getgenv().ConfigTab = getgenv().ToolsGroup:AddTab({ Name = "Editor", Icon = "Lucide:edit-3" })
 
 getgenv().UIControls = {}
 getgenv().syncUIFromConfig = nil
@@ -2333,19 +2338,50 @@ getgenv().MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide
 getgenv().MovementTab:AddCollapsibleSection({Title = "Jump Hack", Icon = "Lucide:arrow-up-circle"}):AddSlider({
     Text = "Jump Power",
     Flag = "JumpValue",
-    Min = 50, Max = 200, Default = Config.Movement.JumpValue, Increment = 5,
+    Min = 10, Max = 200, Default = Config.Movement.JumpValue, Increment = 5,
     Callback = function(value) Config.Movement.JumpValue = value end,
 })
+
+getgenv().jumpOriginal = getgenv().jumpOriginal or nil
+getgenv().jumpLastHumanoid = getgenv().jumpLastHumanoid or nil
+
+local function captureJumpOriginal(hum)
+    if not hum then return end
+    if getgenv().jumpLastHumanoid == hum then return end
+    getgenv().jumpLastHumanoid = hum
+    getgenv().jumpOriginal = {
+        JumpPower = hum.JumpPower,
+        JumpHeight = hum.JumpHeight,
+        UseJumpPower = hum.UseJumpPower,
+    }
+end
+
+local function restoreJumpOriginal(hum)
+    if not hum or not getgenv().jumpOriginal then return end
+    local o = getgenv().jumpOriginal
+    hum.UseJumpPower = o.UseJumpPower
+    if o.UseJumpPower then
+        hum.JumpPower = o.JumpPower
+    else
+        hum.JumpHeight = o.JumpHeight
+    end
+end
 
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
+    if not hum then
+        getgenv().jumpLastHumanoid = nil
+        return
+    end
+
+    captureJumpOriginal(hum)
+
     if Config.Movement.JumpEnabled then
-        hum.JumpPower = Config.Movement.JumpValue
         hum.UseJumpPower = true
+        hum.JumpPower = Config.Movement.JumpValue
     else
-        hum.JumpPower = 50
+        restoreJumpOriginal(hum)
     end
 end)
 
@@ -2424,7 +2460,7 @@ else
     end
 
     local function addCfgToggle(section, key, label, icon, defaultValue, minVal, maxVal, increment)
-        local sectionObj = getgenv().ConfigTab:AddCollapsibleSection({Title = section .. " · " .. label, Icon = icon or "Lucide:settings"})
+        local sectionObj = getgenv().ConfigTab:AddCollapsibleSection({Title = section .. " | " .. label, Icon = icon or "Lucide:settings"})
 
         sectionObj:AddToggle({
             Text = "Enable " .. label,
@@ -2518,7 +2554,7 @@ else
 end
 
 getgenv().updateAimModeLabels = function()
-    local text = "Current mode • " .. tostring(Config.AimMode or "Custom")
+    local text = "Current mode | " .. tostring(Config.AimMode or "Custom")
     if getgenv().LegitModeLabel and getgenv().LegitModeLabel.Set then getgenv().LegitModeLabel:Set(text) end
     if getgenv().RageModeLabel and getgenv().RageModeLabel.Set then getgenv().RageModeLabel:Set(text) end
 end
@@ -2537,13 +2573,13 @@ getgenv().applyAimPreset = function(name, values, notification)
 end
 
 local LegitSection = getgenv().LegitTab:AddCollapsibleSection({Title = "Legit Aim", Icon = "Lucide:user-check"})
-getgenv().LegitModeLabel = LegitSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
+getgenv().LegitModeLabel = LegitSection:AddLabel("Current mode | " .. tostring(Config.AimMode))
 
 LegitSection:AddButton({
-    Text = "Legit • Subtle",
+    Text = "Legit | Subtle",
     Icon = "Lucide:feather",
     Callback = function()
-        getgenv().applyAimPreset("Legit • Subtle", {
+        getgenv().applyAimPreset("Legit | Subtle", {
             Enabled = true, HoldRMB = true, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = true, RespectFlash = true,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2558,10 +2594,10 @@ LegitSection:AddButton({
 })
 
 LegitSection:AddButton({
-    Text = "Legit • Balanced",
+    Text = "Legit | Balanced",
     Icon = "Lucide:scale",
     Callback = function()
-        getgenv().applyAimPreset("Legit • Balanced", {
+        getgenv().applyAimPreset("Legit | Balanced", {
             Enabled = true, HoldRMB = true, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = true, RespectFlash = true,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2576,10 +2612,10 @@ LegitSection:AddButton({
 })
 
 LegitSection:AddButton({
-    Text = "Legit • Strong",
+    Text = "Legit | Strong",
     Icon = "Lucide:zap",
     Callback = function()
-        getgenv().applyAimPreset("Legit • Strong", {
+        getgenv().applyAimPreset("Legit | Strong", {
             Enabled = true, HoldRMB = true, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = true, RespectFlash = true,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2594,13 +2630,13 @@ LegitSection:AddButton({
 })
 
 local RageSection = getgenv().RageTab:AddCollapsibleSection({Title = "Rage Aim", Icon = "Lucide:flame"})
-getgenv().RageModeLabel = RageSection:AddLabel("Current mode • " .. tostring(Config.AimMode))
+getgenv().RageModeLabel = RageSection:AddLabel("Current mode | " .. tostring(Config.AimMode))
 
 RageSection:AddButton({
-    Text = "Rage • Visible",
+    Text = "Rage | Visible",
     Icon = "Lucide:eye",
     Callback = function()
-        getgenv().applyAimPreset("Rage • Visible", {
+        getgenv().applyAimPreset("Rage | Visible", {
             Enabled = true, HoldRMB = false, VisibleCheck = true,
             RespectGameVisibility = true, RespectSmoke = false, RespectFlash = false,
             HeadPriority = true, AimPoint = "Head", Prediction = true,
@@ -2615,10 +2651,10 @@ RageSection:AddButton({
 })
 
 RageSection:AddButton({
-    Text = "Rage • Max",
+    Text = "Rage | Max",
     Icon = "Lucide:flame",
     Callback = function()
-        getgenv().applyAimPreset("Rage • Max", {
+        getgenv().applyAimPreset("Rage | Max", {
             Enabled = true, HoldRMB = false, VisibleCheck = false,
             RespectGameVisibility = false, RespectSmoke = false, RespectFlash = false,
             HeadPriority = true, AimPoint = "Closest Part", Prediction = true,
@@ -2685,7 +2721,7 @@ getgenv().syncUIFromConfig = function()
 end
 
 local ConfigProfileSection = getgenv().ConfigsTab:AddCollapsibleSection({Title = "Profiles", Icon = "Lucide:user"})
-ConfigStore.StatusLabel = ConfigProfileSection:AddLabel(ConfigStore.Available and ("Ready • " .. ConfigStore.Selected) or "Unavailable • filesystem APIs missing")
+ConfigStore.StatusLabel = ConfigProfileSection:AddLabel(ConfigStore.Available and ("Ready | " .. ConfigStore.Selected) or "Unavailable | filesystem APIs missing")
 
 if ConfigStore.Available then
     ConfigStore.ProfileDropdown = ConfigProfileSection:AddDropdown({
@@ -2700,7 +2736,7 @@ if ConfigStore.Available then
                 ConfigStore.PendingProfile = ConfigStore.Selected
                 if ConfigStore.ProfileInput and ConfigStore.ProfileInput.Set then ConfigStore.ProfileInput:Set(ConfigStore.Selected) end
                 saveMeta()
-                setConfigStatus("Selected • " .. ConfigStore.Selected)
+                setConfigStatus("Selected " .. ConfigStore.Selected)
             end
         end,
     })
@@ -2753,7 +2789,7 @@ if ConfigStore.Available then
             ConfigStore.AutoSave = value == true
             saveMeta()
             if ConfigStore.AutoSave then saveConfig(ConfigStore.Selected, false) end
-            setConfigStatus(ConfigStore.AutoSave and ("Auto Save ON • " .. ConfigStore.Selected) or "Auto Save OFF")
+            setConfigStatus(ConfigStore.AutoSave and ("Auto Save ON | " .. ConfigStore.Selected) or "Auto Save OFF")
         end,
     })
     ConfigProfileSection:AddToggle({
@@ -2761,7 +2797,7 @@ if ConfigStore.Available then
         Callback = function(value)
             ConfigStore.AutoLoad = value == true
             saveMeta()
-            setConfigStatus(ConfigStore.AutoLoad and ("Auto Load ON • " .. ConfigStore.Selected) or "Auto Load OFF")
+            setConfigStatus(ConfigStore.AutoLoad and ("Auto Load ON | " .. ConfigStore.Selected) or "Auto Load OFF")
         end,
     })
 else
@@ -2888,6 +2924,8 @@ getgenv().HomeChangelogSub:AddChangelogEntry({
         { Type = "Added",   Text = "Editor Tab with toggles for all game Config values" },
         { Type = "Added",   Text = "Jump Hack in Movement tab" },
         { Type = "Added",   Text = "Menu keybind: Right Alt" },
+        { Type = "Changed", Text = "Tabs reorganized into 4 groups: COMBAT, PRESETS, CONFIG, SYSTEM" },
+        { Type = "Fixed",   Text = "Editor tab icon now displays correctly" },
     },
 })
 
@@ -2941,7 +2979,7 @@ task.spawn(function()
         if getgenv().destroyed then return end
         local ok = pcall(initializeGameModules)
         if not ok then
-            getgenv().moduleInitState = "READY • fallback (native init failed)"
+            getgenv().moduleInitState = "READY | fallback (native init failed)"
             getgenv().setStatus(getgenv().moduleInitState)
         end
         if getgenv().EntityService and getgenv().WorldManager and getgenv().CameraController and getgenv().WeaponController then break end
